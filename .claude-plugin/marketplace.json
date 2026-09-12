@@ -1,0 +1,11 @@
+{
+  "name": "coldlead-studio",
+  "owner": { "name": "Gabriele Crema" },
+  "plugins": [
+    {
+      "name": "coldlead-studio",
+      "source": "./",
+      "description": "Precision Opportunity Score lead scouting: MCP server + coldlead-scout skill."
+    }
+  ]
+}
