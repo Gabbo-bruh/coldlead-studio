@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import logging
+import threading
 import time
+import uuid
+from dataclasses import dataclass, field
 from importlib import resources
 from typing import Any
 
@@ -50,6 +54,50 @@ class ExportRequest(ScoreRequest):
     format: str = "csv"
     with_kits: bool = False
     lang: str | None = None
+
+
+log = logging.getLogger(__name__)
+
+
+@dataclass
+class ScoutJob:
+    """A scout running in a background thread, polled by the dashboard for live progress."""
+
+    id: str
+    status: str = "running"  # running | done | error
+    stage: str = "discover"
+    done: int = 0
+    total: int = 1
+    message: str = "Starting…"
+    log: list[str] = field(default_factory=list)
+    started: float = field(default_factory=time.monotonic)
+    finished: float | None = None
+    result: dict[str, Any] | None = None
+    error: str | None = None
+    error_code: int = 0
+
+    def update(self, stage: str, done: int, total: int, message: str = "") -> None:
+        self.stage, self.done, self.total = stage, done, total
+        if message and message != self.message:
+            self.message = message
+            self.log.append(f"{time.monotonic() - self.started:5.1f}s  {message}")
+            del self.log[:-60]
+
+    def public(self) -> dict[str, Any]:
+        end = self.finished or time.monotonic()
+        return {
+            "id": self.id,
+            "status": self.status,
+            "stage": self.stage,
+            "done": self.done,
+            "total": self.total,
+            "message": self.message,
+            "log": self.log,
+            "elapsed": round(end - self.started, 1),
+            "error": self.error,
+            "error_code": self.error_code,
+            "result": self.result if self.status == "done" else None,
+        }
 
 
 def _summary(session: Session) -> dict[str, Any]:
@@ -145,28 +193,31 @@ def create_app(store: SessionStore | None = None) -> FastAPI:
     def score(req: ScoreRequest) -> dict[str, Any]:
         return scored_payload(load(req.session_id), config_for(req))
 
-    @app.post("/api/scout")
-    def scout(req: ScoutRequest) -> dict[str, Any]:
-        from coldlead.pipeline import scout as run_scout
-
+    def scout_kwargs(req: ScoutRequest) -> dict[str, Any]:
         if req.source not in SOURCES:
             raise HTTPException(422, f"Unknown source '{req.source}'")
         near = (req.lat, req.lon) if req.lat is not None and req.lon is not None else None
         if not req.location.strip() and near is None:
             raise HTTPException(422, "Type a location or drop a pin on the map.")
+        return {
+            "niche": req.niche,
+            "location": req.location.strip(),
+            "limit": req.limit,
+            "near": near,
+            "radius_km": req.radius_km,
+            "expand": req.expand,
+            "source": req.source,
+            "audit": req.audit,
+            "lang": req.lang,
+            "store": store,
+        }
+
+    def run_scout_job(kwargs: dict[str, Any], progress: Any = None) -> dict[str, Any]:
+        """Run a scout and return the scored payload; raises HTTPException on user errors."""
+        from coldlead.pipeline import scout as run_scout
+
         try:
-            session = run_scout(
-                req.niche,
-                req.location.strip(),
-                req.limit,
-                near=near,
-                radius_km=req.radius_km,
-                expand=req.expand,
-                source=req.source,
-                audit=req.audit,
-                lang=req.lang,
-                store=store,
-            )
+            session = run_scout(**kwargs, **({"progress": progress} if progress else {}))
         except LocationNotFound as exc:
             raise HTTPException(422, str(exc)) from exc
         except ProviderError as exc:
@@ -174,6 +225,48 @@ def create_app(store: SessionStore | None = None) -> FastAPI:
         if not session.leads:
             raise HTTPException(404, "No leads found. " + " ".join(session.notices))
         return scored_payload(session, config_for(ScoreRequest()))
+
+    jobs: dict[str, ScoutJob] = {}
+    jobs_lock = threading.Lock()
+
+    @app.post("/api/scout")
+    def scout(req: ScoutRequest) -> dict[str, Any]:
+        """Synchronous scout (simple API clients). The dashboard uses /api/jobs/scout."""
+        return run_scout_job(scout_kwargs(req))
+
+    @app.post("/api/jobs/scout")
+    def start_scout_job(req: ScoutRequest) -> dict[str, str]:
+        kwargs = scout_kwargs(req)
+        job = ScoutJob(id=uuid.uuid4().hex[:12])
+        with jobs_lock:
+            # Forget finished jobs after 10 minutes so memory stays flat.
+            now = time.monotonic()
+            for key in [k for k, j in jobs.items() if j.finished and now - j.finished > 600]:
+                del jobs[key]
+            jobs[job.id] = job
+
+        def work() -> None:
+            try:
+                job.result = run_scout_job(kwargs, progress=job.update)
+                job.status = "done"
+                job.update("save", 1, 1, "Done")
+            except HTTPException as exc:
+                job.error, job.error_code, job.status = str(exc.detail), exc.status_code, "error"
+            except Exception as exc:  # never leave the dashboard polling a dead job
+                log.exception("scout job %s failed", job.id)
+                job.error, job.error_code, job.status = f"Unexpected error: {exc}", 500, "error"
+            finally:
+                job.finished = time.monotonic()
+
+        threading.Thread(target=work, name=f"scout-{job.id}", daemon=True).start()
+        return {"job_id": job.id}
+
+    @app.get("/api/jobs/{job_id}")
+    def scout_job_status(job_id: str) -> dict[str, Any]:
+        job = jobs.get(job_id)
+        if job is None:
+            raise HTTPException(404, "Job not found (the server may have restarted)")
+        return job.public()
 
     @app.get("/api/geocode")
     def geocode_place(q: str) -> dict[str, Any]:

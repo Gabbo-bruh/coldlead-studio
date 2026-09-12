@@ -27,10 +27,11 @@ from coldlead.settings import USER_AGENT, Settings, get_settings
 from coldlead.storage import SessionStore, new_session_id
 
 log = logging.getLogger(__name__)
-Progress = Callable[[str, int, int], None]
+# progress(stage, done, total, message): stages are discover → audit → enrich → save.
+Progress = Callable[..., None]
 
 
-def _noop(stage: str, done: int, total: int) -> None:
+def _noop(stage: str, done: int, total: int, message: str = "") -> None:
     return None
 
 
@@ -49,10 +50,15 @@ def discover(
     near: tuple[float, float] | None = None,
     radius_m: int | None = None,
     expand: bool = True,
+    progress: Progress = _noop,
 ) -> tuple[list[Lead], str, list[str]]:
     """Find leads, falling back gracefully. Returns ``(leads, source_used, notices)``."""
     notices: list[str] = []
     chain: list[tuple[str, Callable[[], Provider]]] = []
+
+    def step(message: str) -> None:
+        progress("discover", 0, 1, message)
+
     if source in ("auto", "google"):
         if settings.google_places_api_key:
             chain.append(
@@ -66,7 +72,7 @@ def discover(
         elif source == "google":
             raise ProviderError("GOOGLE_PLACES_API_KEY is not set")
     if source in ("auto", "osm"):
-        chain.append(("osm", lambda: OSMProvider(country=settings.country)))
+        chain.append(("osm", lambda: OSMProvider(country=settings.country, on_step=step)))
     if source in ("auto", "demo"):
         chain.append(("demo", DemoProvider))
     if not chain:
@@ -78,6 +84,11 @@ def discover(
             # A live source worked but found nothing: showing synthetic data would be misleading.
             break
         provider = factory()
+        step(
+            {"google": "Searching Google Places…", "demo": "Generating demo prospects…"}.get(
+                name, "Searching OpenStreetMap…"
+            )
+        )
         try:
             leads = provider.search(
                 niche, location, limit, near=near, radius_m=radius_m, expand=expand
@@ -188,11 +199,12 @@ def audit_leads(
             return index, updated
 
         done = 0
+        progress("audit", 0, len(targets), f"Auditing {len(targets)} websites…")
         with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
             for index, lead in pool.map(work, targets):
                 result[index] = lead
                 done += 1
-                progress("audit", done, len(targets))
+                progress("audit", done, len(targets), f"Audited {lead.company.name}")
     return result
 
 
@@ -208,12 +220,14 @@ def enrich_leads(
     if ai == "on" and not settings.llm_enabled:
         log.warning("AI enrichment requested but no LLM key configured; using heuristics")
     if not use_llm:
+        progress("enrich", len(leads), len(leads), "Scored owners and opportunities (heuristics)")
         return [heuristic_enrich(lead, lang) for lead in leads]
     out: list[Lead] = []
+    progress("enrich", 0, len(leads), f"AI insights with {settings.llm_provider}…")
     with ThreadPoolExecutor(max_workers=4) as pool:
         for done, lead in enumerate(pool.map(lambda ld: llm_enrich(ld, settings, lang), leads), 1):
             out.append(lead)
-            progress("enrich", done, len(leads))
+            progress("enrich", done, len(leads), f"AI insights: {lead.company.name}")
     return out
 
 
@@ -250,15 +264,23 @@ def scout(
     if not location and near is None:
         raise ProviderError("Give a location name or a map pin (latitude, longitude).")
     radius_m = int((radius_km or 5) * 1000) if near is not None else None
-    progress("discover", 0, 1)
+    progress("discover", 0, 1, "Starting…")
     leads, used, notices = discover(
-        niche, location, limit, source, settings, near=near, radius_m=radius_m, expand=expand
+        niche,
+        location,
+        limit,
+        source,
+        settings,
+        near=near,
+        radius_m=radius_m,
+        expand=expand,
+        progress=progress,
     )
     if near is not None and not location:
         place = next((ld.company.city for ld in leads if ld.company.city), "")
         location = f"📍 {place or f'{near[0]:.3f}, {near[1]:.3f}'} · {(radius_km or 5):g} km"
 
-    progress("discover", 1, 1)
+    progress("discover", 1, 1, f"{len(leads)} businesses from {used}")
     if audit:
         leads = audit_leads(
             leads, settings, pagespeed=pagespeed, respect_robots=respect_robots, progress=progress
@@ -275,6 +297,7 @@ def scout(
         notices=notices,
     )
     (store or SessionStore()).save(session)
+    progress("save", 1, 1, f"Saved session {session.id}")
     return session
 
 

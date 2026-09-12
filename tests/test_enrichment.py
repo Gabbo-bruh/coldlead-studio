@@ -108,4 +108,4 @@ def test_audit_leads_skips_demo_and_merges(monkeypatch):
     assert "Meta Ad Library: active ads" in out[0].raw_signals.ads_evidence
     assert out[0].company.email == "hi@x.example"
     assert out[1] is demo
-    assert progress == [("audit", 1, 1)]
+    assert [p[:3] for p in progress] == [("audit", 0, 1), ("audit", 1, 1)]

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
@@ -322,7 +323,11 @@ class OSMProvider:
     name = "osm"
 
     def __init__(
-        self, client: httpx.Client | None = None, timeout: float = 30.0, country: str | None = "IT"
+        self,
+        client: httpx.Client | None = None,
+        timeout: float = 30.0,
+        country: str | None = "IT",
+        on_step: Callable[[str], None] | None = None,
     ) -> None:
         self.client = client or httpx.Client(
             headers={"User-Agent": USER_AGENT, "Accept-Language": "it,en"}, timeout=timeout
@@ -330,15 +335,25 @@ class OSMProvider:
         self.country = country
         self.last_scope: SearchScope | None = None
         self.notes: list[str] = []
+        self._on_step = on_step
+
+    def _step(self, message: str) -> None:
+        if self._on_step:
+            self._on_step(message)
 
     def _overpass(self, query: str) -> list[dict]:
         """Try each public Overpass instance; retry once on 429/504 honouring Retry-After."""
         last_error: Exception | None = None
-        for url in OVERPASS_URLS:
+        for position, url in enumerate(OVERPASS_URLS, 1):
+            host = url.split("/")[2]
             for attempt in range(2):
                 try:
+                    self._step(
+                        f"Querying OpenStreetMap ({host}, server {position}/{len(OVERPASS_URLS)})…"
+                    )
                     resp = self.client.post(url, data={"data": query})
                     if resp.status_code in (429, 504) and attempt == 0:
+                        self._step(f"{host} is busy, retrying in a moment…")
                         time.sleep(min(float(resp.headers.get("Retry-After") or 2), 5.0))
                         continue
                     resp.raise_for_status()
@@ -351,6 +366,9 @@ class OSMProvider:
                     return data.get("elements", [])
                 except (httpx.HTTPError, ValueError) as exc:
                     last_error = exc
+                    self._step(
+                        f"{host} did not answer ({type(exc).__name__}), trying another server…"
+                    )
                     break
         raise ProviderError(
             f"Overpass API unavailable ({last_error}). Try again later or use --source demo."
@@ -382,15 +400,20 @@ class OSMProvider:
         """
         self.notes = []
         if near is not None:
+            self._step("Reading the pin position…")
             scope = pin_scope(self.client, near[0], near[1], radius_m or 5_000)
         else:
+            self._step(f"Locating '{location}' on the map…")
             scope = geocode(self.client, location, self.country)
+        self._step(f"Search area: {scope.label}")
         self.last_scope = scope
         leads = self._collect(niche, scope, limit, [])
+        self._step(f"Found {len(leads)} businesses")
 
         if expand and len(leads) < limit and scope.center:
             for radius in widening_radii(scope):
                 before = len(leads)
+                self._step(f"Only {before} found — widening to {radius / 1000:g} km…")
                 wider = SearchScope(
                     "around",
                     point=scope.center,

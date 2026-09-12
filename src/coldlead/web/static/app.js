@@ -527,11 +527,54 @@ function setPin(pin) {
 }
 
 // ---------------------------------------------------------------- actions
+const STAGES = ["discover", "audit", "enrich", "save"];
+// Share of the progress bar owned by each stage (discovery is the slow, unpredictable part).
+const STAGE_SPAN = { discover: [0, 35], audit: [35, 85], enrich: [85, 95], save: [95, 100] };
+
+function showJob(job, title) {
+  const card = $("#job");
+  card.hidden = false;
+  card.dataset.status = job.status;
+  $("#job-title").textContent = title || (job.status === "done" ? "Done" : job.status === "error" ? "Scout failed" : "Scouting…");
+  $("#job-time").textContent = `${job.elapsed.toFixed(1)}s`;
+  $("#job-msg").textContent = job.status === "error" ? job.error : job.message;
+  $("#job-close").hidden = job.status === "running";
+  const current = STAGES.indexOf(job.stage);
+  $$("#job-steps li").forEach((li, i) => {
+    const finished = job.status === "done" || i < current;
+    li.classList.toggle("done", finished);
+    li.classList.toggle("active", !finished && i === current && job.status === "running");
+  });
+  const [from, to] = STAGE_SPAN[job.stage] || [0, 100];
+  const ratio = job.total ? job.done / job.total : 0;
+  const pct = job.status === "done" ? 100 : from + (to - from) * ratio;
+  $("#job-bar").style.setProperty("--bar-w", `${$("#job-bar").clientWidth}px`); // gradient spans the full bar
+  $("#job-fill").style.width = `${pct}%`;
+  $("#job-bar").classList.toggle("indeterminate", job.status === "running" && job.stage === "discover");
+  const log = $("#job-log");
+  mount(log, job.log.map((line) => html`<li>${line}</li>`));
+  log.scrollTop = log.scrollHeight;
+}
+
 async function runScout(payload, button) {
   button.classList.add("busy");
+  showJob({ status: "running", stage: "discover", done: 0, total: 1, message: "Starting…", log: [], elapsed: 0 });
+  $("#empty").hidden = true;
   try {
-    const res = await api("/api/scout", { method: "POST", body: payload });
-    const data = await res.json();
+    const { job_id: jobId } = await (await api("/api/jobs/scout", { method: "POST", body: payload })).json();
+    let job;
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 500));
+      job = await (await api(`/api/jobs/${jobId}`)).json();
+      showJob(job);
+      if (job.status !== "running") break;
+    }
+    if (job.status === "error") {
+      toast(job.error, true);
+      if (!state.sessionId) showEmpty(true);
+      return;
+    }
+    const data = job.result;
     await loadSessions(data.session.id);
     await rescore();
     if (data.session.source === "demo" && payload.source !== "demo") {
@@ -539,8 +582,11 @@ async function runScout(payload, button) {
     } else {
       toast(`${data.session.lead_count} leads collected from ${data.session.source}`);
     }
+    showJob(job, `${data.session.lead_count} leads ready`);
+    setTimeout(() => { if ($("#job").dataset.status === "done") $("#job").hidden = true; }, 6000);
   } catch (err) {
     toast(err.message, true);
+    showJob({ status: "error", stage: "discover", done: 0, total: 1, error: err.message, log: [], elapsed: 0 });
   } finally {
     button.classList.remove("busy");
   }
@@ -619,6 +665,7 @@ function wire() {
     dialog.addEventListener("click", (e) => { if (e.target === dialog) dialog.close(); });
   }
 
+  $("#job-close").addEventListener("click", () => { $("#job").hidden = true; });
   $("#pin-btn").addEventListener("click", openMap);
   $("#pin-clear").addEventListener("click", () => setPin(null));
   $("#pin-use").addEventListener("click", () => {

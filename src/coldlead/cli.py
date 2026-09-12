@@ -236,10 +236,14 @@ def _progress_callback(progress: Progress):
         "enrich": "AI insights",
     }
 
-    def update(stage: str, done: int, total: int) -> None:
+    def update(stage: str, done: int, total: int, message: str = "") -> None:
+        if stage == "save":
+            return
+        label = labels.get(stage, stage)
+        description = f"{label} · {message}" if message else label
         if stage not in tasks:
-            tasks[stage] = progress.add_task(labels.get(stage, stage), total=total)
-        progress.update(tasks[stage], completed=done, total=total)
+            tasks[stage] = progress.add_task(description, total=total)
+        progress.update(tasks[stage], completed=done, total=total, description=description)
 
     return update
 
