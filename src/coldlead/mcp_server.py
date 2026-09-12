@@ -70,20 +70,37 @@ def build_server(store: SessionStore | None = None) -> MCPServer:
     @server.tool(annotations=ToolAnnotations(open_world_hint=True))
     def coldlead_search(
         niche: str,
-        location: str,
+        location: str = "",
         limit: int = 10,
         preset: str | None = None,
         source: Literal["auto", "demo", "osm", "google"] = "auto",
         audit: bool = True,
         format: Format = "markdown",
+        latitude: float | None = None,
+        longitude: float | None = None,
+        radius_km: float = 5.0,
+        expand: bool = True,
     ) -> str:
         """Find businesses in a niche and location, audit their websites, score and rank them.
 
+        Search a named place (location) or a map pin (latitude + longitude, radius_km up to 25).
+        With expand, too few results widen the area automatically.
         Results are cached as a session so they can be re-scored instantly with coldlead_rescore.
         source: auto (Google if key → OpenStreetMap → offline demo), demo, osm or google.
         """
+        near = (latitude, longitude) if latitude is not None and longitude is not None else None
         try:
-            session = scout(niche, location, limit, source=source, audit=audit, store=store)
+            session = scout(
+                niche,
+                location,
+                limit,
+                near=near,
+                radius_km=radius_km,
+                expand=expand,
+                source=source,
+                audit=audit,
+                store=store,
+            )
         except ProviderError as exc:
             return f"Discovery failed: {exc}"
         if not session.leads:
@@ -93,7 +110,7 @@ def build_server(store: SessionStore | None = None) -> MCPServer:
         header = f"Session `{session.id}` · source: {session.source}\n" + "".join(
             f"> {n}\n" for n in session.notices
         )
-        return header + "\n" + render(format, scored, config, title=f"{niche} · {location}")
+        return header + "\n" + render(format, scored, config, title=f"{niche} · {session.location}")
 
     @server.tool(annotations=read_only)
     def coldlead_rescore(

@@ -16,13 +16,15 @@ SOURCES: tuple[str, ...] = ("auto", "demo", "osm", "google")
 class Provider(Protocol):
     name: str
 
-    def search(self, niche: str, location: str, limit: int = 10) -> list[Lead]: ...
+    def search(self, niche: str, location: str, limit: int = 10, **options: object) -> list[Lead]:
+        """``options`` may carry ``near`` (lat, lon), ``radius_m`` and ``expand``."""
+        ...
 
 
 class DemoProvider:
     name = "demo"
 
-    def search(self, niche: str, location: str, limit: int = 10) -> list[Lead]:
+    def search(self, niche: str, location: str, limit: int = 10, **options: object) -> list[Lead]:
         from coldlead.providers.demo import demo_leads
 
-        return demo_leads(niche, location, limit)
+        return demo_leads(niche, location or "Demo", limit)

@@ -43,6 +43,8 @@ coldlead kit 1                                               # kit di outreach p
 coldlead web                                                 # dashboard interattiva
 ```
 
+Puoi anche cercare intorno a un punto preciso: `coldlead scout "nautico" --near 44.35,9.15 -r 3` (o il pulsante 📍 nella dashboard); se i risultati sono meno del limite, l'area si allarga da sola fino a 25 km.
+
 Senza `--source demo` lo scouting usa **attività reali** (Google Places se hai la chiave,
 altrimenti OpenStreetMap, gratis) con audit tecnico live di ogni sito.
 
@@ -75,7 +77,7 @@ Specifica completa in [docs/scoring.md](docs/scoring.md) · visione originale in
 | **CLI** | `coldlead scout / rescore / explain / kit / export / import / audit / web / mcp / doctor` |
 | **Server MCP** | `claude mcp add coldlead -- coldlead mcp` · per Claude Desktop, Cursor, Windsurf, Antigravity: `{"command": "coldlead", "args": ["mcp"]}` |
 | **Skill agente** | [`skills/coldlead-scout/SKILL.md`](skills/coldlead-scout/SKILL.md), sincronizzata in `.claude/skills/` e `.agents/skills/`; il repo è anche un marketplace di plugin Claude Code (`/plugin marketplace add gabrielecrema/coldlead-studio`) |
-| **Dashboard** | `coldlead web` — slider live, scala termica, radar, Action Kit IT/EN, export CSV/JSON/MD |
+| **Dashboard** | `coldlead web` — slider live, scala termica, radar, Action Kit IT/EN, export CSV/JSON/MD, **📍 pin sulla mappa** con raggio regolabile |
 
 ## Fonti dati e chiavi (tutte opzionali)
 

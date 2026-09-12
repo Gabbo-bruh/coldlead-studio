@@ -35,8 +35,12 @@ class ScoreRequest(BaseModel):
 
 class ScoutRequest(BaseModel):
     niche: str = Field(min_length=1, max_length=120)
-    location: str = Field(min_length=1, max_length=120)
+    location: str = Field(default="", max_length=120)
     limit: int = Field(default=10, ge=1, le=60)
+    lat: float | None = Field(default=None, ge=-90, le=90)
+    lon: float | None = Field(default=None, ge=-180, le=180)
+    radius_km: float = Field(default=5.0, ge=0.2, le=25)
+    expand: bool = True
     source: str = "auto"
     audit: bool = True
     lang: str | None = None
@@ -147,11 +151,17 @@ def create_app(store: SessionStore | None = None) -> FastAPI:
 
         if req.source not in SOURCES:
             raise HTTPException(422, f"Unknown source '{req.source}'")
+        near = (req.lat, req.lon) if req.lat is not None and req.lon is not None else None
+        if not req.location.strip() and near is None:
+            raise HTTPException(422, "Type a location or drop a pin on the map.")
         try:
             session = run_scout(
                 req.niche,
-                req.location,
+                req.location.strip(),
                 req.limit,
+                near=near,
+                radius_km=req.radius_km,
+                expand=req.expand,
                 source=req.source,
                 audit=req.audit,
                 lang=req.lang,
@@ -164,6 +174,24 @@ def create_app(store: SessionStore | None = None) -> FastAPI:
         if not session.leads:
             raise HTTPException(404, "No leads found. " + " ".join(session.notices))
         return scored_payload(session, config_for(ScoreRequest()))
+
+    @app.get("/api/geocode")
+    def geocode_place(q: str) -> dict[str, Any]:
+        """Centre the map on a typed place (same resolver as the OSM provider)."""
+        import httpx
+
+        from coldlead.providers.osm import geocode
+        from coldlead.settings import USER_AGENT
+
+        try:
+            with httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=15) as client:
+                scope = geocode(client, q, get_settings().country)
+        except LocationNotFound as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except httpx.HTTPError as exc:
+            raise HTTPException(502, f"OpenStreetMap unreachable: {exc}") from exc
+        lat, lon = scope.center or (0.0, 0.0)
+        return {"lat": lat, "lon": lon, "name": scope.name, "label": scope.label}
 
     @app.get("/api/kit/{session_id}/{lead_id}")
     def kit(

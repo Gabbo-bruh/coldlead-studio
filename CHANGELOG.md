@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- 📍 Map pin search: `--near LAT,LON --radius KM` in the CLI, `latitude`/`longitude`/`radius_km`
+  in MCP, and a Leaflet map (vendored, BSD-2) in the dashboard to drop a pin and pick a radius.
+- Automatic widening (up to 25 km) when a search returns fewer leads than requested.
+
+### Fixed
+- Geocoding only accepts real places and prefers the configured country ("Tigullio" no longer
+  resolves to a nightclub in Malta); Overpass timeouts are no longer read as empty results; live
+  searches with no results never fall back to demo data.
+- Dashboard cards no longer replay their entry animation on every re-rank.
+
 ## [1.0.0] — 2026-09-12
 
 First public release: a ground-up rewrite of the original prototype around the
@@ -27,4 +40,4 @@ First public release: a ground-up rewrite of the original prototype around the
 - **Surfaces**: `coldlead` CLI (Typer + Rich), MCP server (stdio and streamable HTTP), agent skill for
   Claude Code and Antigravity, Claude Code plugin marketplace, local dashboard (FastAPI + vanilla JS).
 - Exports: JSON (schema v1.0.0), JSONL, compact LLM JSON, RFC 4180 CSV, Markdown report with kits.
-- Published JSON Schema, 154 offline tests, CI on Linux/macOS/Windows × Python 3.10–3.13.
+- Published JSON Schema, 148 offline tests, CI on Linux/macOS/Windows × Python 3.10–3.13.

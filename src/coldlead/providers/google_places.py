@@ -66,15 +66,31 @@ class GooglePlacesProvider:
         self.language = language
         self.client = client or httpx.Client(timeout=15.0)
 
-    def search(self, niche: str, location: str, limit: int = 10) -> list[Lead]:
+    def search(
+        self,
+        niche: str,
+        location: str = "",
+        limit: int = 10,
+        *,
+        near: tuple[float, float] | None = None,
+        radius_m: int | None = None,
+        **_: object,
+    ) -> list[Lead]:
         leads: list[Lead] = []
         page_token: str | None = None
         while len(leads) < limit:
             body: dict = {
-                "textQuery": f"{niche} {location}",
+                "textQuery": f"{niche} {location}".strip(),
                 "pageSize": min(20, limit - len(leads)),
                 "languageCode": self.language,
             }
+            if near is not None:
+                body["locationBias"] = {
+                    "circle": {
+                        "center": {"latitude": near[0], "longitude": near[1]},
+                        "radius": float(min(radius_m or 5_000, 50_000)),
+                    }
+                }
             if page_token:
                 body["pageToken"] = page_token
             resp = self.client.post(
@@ -86,7 +102,8 @@ class GooglePlacesProvider:
                 message = resp.json().get("error", {}).get("message", resp.text[:200])
                 raise ProviderError(f"Google Places error {resp.status_code}: {message}")
             data = resp.json()
-            leads.extend(place_to_lead(p, niche, location.title()) for p in data.get("places", []))
+            city = location.title() or ""
+            leads.extend(place_to_lead(p, niche, city) for p in data.get("places", []))
             page_token = data.get("nextPageToken")
             if not page_token:
                 break

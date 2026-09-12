@@ -40,7 +40,15 @@ def _noop(stage: str, done: int, total: int) -> None:
 
 
 def discover(
-    niche: str, location: str, limit: int, source: str, settings: Settings
+    niche: str,
+    location: str,
+    limit: int,
+    source: str,
+    settings: Settings,
+    *,
+    near: tuple[float, float] | None = None,
+    radius_m: int | None = None,
+    expand: bool = True,
 ) -> tuple[list[Lead], str, list[str]]:
     """Find leads, falling back gracefully. Returns ``(leads, source_used, notices)``."""
     notices: list[str] = []
@@ -71,7 +79,9 @@ def discover(
             break
         provider = factory()
         try:
-            leads = provider.search(niche, location, limit)
+            leads = provider.search(
+                niche, location, limit, near=near, radius_m=radius_m, expand=expand
+            )
         except LocationNotFound:
             raise  # a typo or ambiguous place: the user must fix it, not get demo data
         except (ProviderError, httpx.HTTPError, ValueError) as exc:
@@ -82,6 +92,7 @@ def discover(
         scope = getattr(provider, "last_scope", None)
         if scope is not None:
             notices.append(f"OpenStreetMap searched in: {scope.label}")
+        notices.extend(getattr(provider, "notes", []))
         if leads:
             if name == "demo":
                 notices.append(
@@ -213,9 +224,12 @@ def enrich_leads(
 
 def scout(
     niche: str,
-    location: str,
+    location: str = "",
     limit: int = 10,
     *,
+    near: tuple[float, float] | None = None,
+    radius_km: float | None = None,
+    expand: bool = True,
     source: str = "auto",
     audit: bool = True,
     ai: str = "auto",
@@ -226,12 +240,24 @@ def scout(
     store: SessionStore | None = None,
     progress: Progress = _noop,
 ) -> Session:
-    """Discover, audit and enrich leads, then persist the raw session (never the scores)."""
+    """Discover, audit and enrich leads, then persist the raw session (never the scores).
+
+    Search a named place (``location``) or a map pin (``near`` = (lat, lon) + ``radius_km``).
+    """
     settings = settings or get_settings()
     lang = lang or settings.language
     limit = max(1, min(int(limit), 60))
+    if not location and near is None:
+        raise ProviderError("Give a location name or a map pin (latitude, longitude).")
+    radius_m = int((radius_km or 5) * 1000) if near is not None else None
     progress("discover", 0, 1)
-    leads, used, notices = discover(niche, location, limit, source, settings)
+    leads, used, notices = discover(
+        niche, location, limit, source, settings, near=near, radius_m=radius_m, expand=expand
+    )
+    if near is not None and not location:
+        place = next((ld.company.city for ld in leads if ld.company.city), "")
+        location = f"📍 {place or f'{near[0]:.3f}, {near[1]:.3f}'} · {(radius_km or 5):g} km"
+
     progress("discover", 1, 1)
     if audit:
         leads = audit_leads(

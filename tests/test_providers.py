@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from urllib.parse import unquote_plus
 
 import httpx
 import pytest
@@ -244,7 +245,7 @@ def test_osm_search_with_mock_network():
         )
 
     provider = OSMProvider(client=httpx.Client(transport=httpx.MockTransport(handler)))
-    leads = provider.search("Dentista", "Genova", 5)
+    leads = provider.search("Dentista", "Genova", 5, expand=False)
     assert [ld.company.name for ld in leads] == [
         "A Dentist",
         "B Dentist",
@@ -280,7 +281,7 @@ def test_osm_retries_rate_limit_and_falls_back(monkeypatch):
         )
 
     leads = OSMProvider(client=httpx.Client(transport=httpx.MockTransport(handler))).search(
-        "Bar", "X", 3
+        "Bar", "X", 3, expand=False
     )
     assert [ld.company.name for ld in leads] == ["Ok"]
     assert hits == ["overpass-api.de", "overpass-api.de", "overpass.private.coffee"]
@@ -345,3 +346,90 @@ def test_place_to_lead_closed():
     )
     assert lead.raw_signals.business_status == "CLOSED_PERMANENTLY"
     assert not lead.raw_signals.has_website
+
+
+def _osm_client(elements_by_call):
+    """Nominatim answers with a municipality; each Overpass call returns the next batch."""
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "reverse" in request.url.path:
+            return httpx.Response(200, json={"address": {"town": "Camogli"}})
+        if "nominatim" in request.url.host:
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "category": "boundary",
+                        "type": "administrative",
+                        "osm_type": "relation",
+                        "osm_id": 5,
+                        "importance": 0.4,
+                        "address": {"country_code": "it"},
+                        "name": "Camogli",
+                        "lat": "44.35",
+                        "lon": "9.15",
+                        "boundingbox": ["44.34", "44.36", "9.13", "9.17"],
+                    }
+                ],
+            )
+        calls.append(unquote_plus(request.content.decode()))
+        batch = elements_by_call[min(len(calls), len(elements_by_call)) - 1]
+        return httpx.Response(
+            200,
+            json={
+                "elements": [{"type": "node", "id": i, "tags": {"name": name}} for i, name in batch]
+            },
+        )
+
+    return httpx.Client(transport=httpx.MockTransport(handler)), calls
+
+
+def test_osm_widens_search_when_too_few_results():
+    client, calls = _osm_client([[(1, "A")], [(1, "A"), (2, "B"), (3, "C")], [(4, "D"), (5, "E")]])
+    provider = OSMProvider(client=client)
+    leads = provider.search("Ristorante", "Camogli", 4)
+    assert len(calls) == 3  # municipality, then 5 km, then 10 km
+    assert "area(id:" in calls[0] and "area(id:" not in calls[1]
+    assert {ld.company.name for ld in leads} == {"A", "B", "C", "D"}
+    assert "widened the search to 5 km" in provider.notes[0]
+    assert provider.last_scope.radius_m == 10_000
+
+
+def test_osm_no_widening_when_enough_or_disabled():
+    client, calls = _osm_client([[(1, "A"), (2, "B")]])
+    OSMProvider(client=client).search("Ristorante", "Camogli", 2)
+    assert len(calls) == 1
+    client, calls = _osm_client([[(1, "A")]])
+    OSMProvider(client=client).search("Ristorante", "Camogli", 9, expand=False)
+    assert len(calls) == 1
+
+
+def test_osm_pin_search():
+    client, calls = _osm_client([[(1, "A"), (2, "B")]])
+    provider = OSMProvider(client=client)
+    leads = provider.search("Ristorante", "", 2, near=(44.35, 9.15), radius_m=3000)
+    assert len(leads) == 2 and len(calls) == 1
+    assert provider.last_scope.name == "Camogli"
+    assert "pin 44.3500, 9.1500 near Camogli (3 km radius)" in provider.last_scope.label
+    with pytest.raises(LocationNotFound):
+        provider.search("Bar", "", 2, near=(123.0, 9.0))
+
+
+def test_osm_widening_failure_keeps_results():
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "nominatim" in request.url.host:
+            return httpx.Response(200, json=[TIGULLIO[2]])
+        calls.append(request.url.host)
+        if len(calls) == 1:
+            return httpx.Response(
+                200, json={"elements": [{"type": "node", "id": 1, "tags": {"name": "A"}}]}
+            )
+        return httpx.Response(503)
+
+    provider = OSMProvider(client=httpx.Client(transport=httpx.MockTransport(handler)))
+    leads = provider.search("nautico", "Tigullio", 5)
+    assert [ld.company.name for ld in leads] == ["A"]
+    assert "Could not widen the search" in provider.notes[-1]
