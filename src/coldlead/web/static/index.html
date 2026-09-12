@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap">
+  <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -37,6 +38,10 @@
         <form id="scout-form" class="stack" autocomplete="off">
           <label class="field"><span>Niche</span><input name="niche" placeholder="Charter nautico" required maxlength="120"></label>
           <label class="field"><span>Location</span><input name="location" placeholder="Portofino" required maxlength="120"></label>
+          <div class="pin-row">
+            <button type="button" class="chip-btn" id="pin-btn">📍 Pin on map</button>
+            <span class="pin-chip" id="pin-chip" hidden><span id="pin-text"></span><button type="button" id="pin-clear" aria-label="Remove pin">✕</button></span>
+          </div>
           <div class="row">
             <label class="field"><span>Leads</span><input name="limit" type="number" value="10" min="1" max="60"></label>
             <label class="field"><span>Source</span>
@@ -48,6 +53,7 @@
               </select>
             </label>
           </div>
+          <label class="check"><input type="checkbox" name="expand" checked> Widen the area if too few leads</label>
           <button class="btn btn-primary" type="submit"><span class="btn-label">Run scout</span><span class="spinner" aria-hidden="true"></span></button>
           <p class="hint micro" id="source-hint"></p>
         </form>
@@ -167,7 +173,31 @@
     <pre class="kit-text" id="kit-text" tabindex="0"></pre>
   </dialog>
 
+  <dialog id="map-modal" class="modal modal-wide" aria-labelledby="map-title">
+    <form method="dialog" class="modal-close"><button class="icon-btn" aria-label="Close">✕</button></form>
+    <header class="modal-head">
+      <p class="eyebrow mono">📍 search area</p>
+      <h3 id="map-title">Drop a pin</h3>
+      <p class="opp">Click the map to place the pin, drag it to fine-tune. Leads are searched inside the circle.</p>
+    </header>
+    <div class="map-tools">
+      <form id="map-search" class="map-search" autocomplete="off">
+        <input id="map-q" placeholder="Go to a place… e.g. Chiavari" maxlength="120" aria-label="Go to a place">
+        <button class="chip-btn" type="submit">Go</button>
+      </form>
+      <label class="field map-radius"><span>Radius · <output id="radius-out">5 km</output></span>
+        <input type="range" id="radius" min="0.5" max="25" step="0.5" value="5" aria-label="Search radius in km">
+      </label>
+    </div>
+    <div id="map" class="map" role="application" aria-label="Map: click to drop the search pin"></div>
+    <div class="map-foot">
+      <span class="mono micro" id="pin-coords">no pin yet — click the map</span>
+      <button class="btn btn-primary btn-sm" id="pin-use" type="button" disabled>Use this area</button>
+    </div>
+  </dialog>
+
   <div class="toast" id="toast" role="status"></div>
+  <script src="/static/vendor/leaflet/leaflet.js"></script>
   <script src="/static/app.js" type="module"></script>
 </body>
 </html>

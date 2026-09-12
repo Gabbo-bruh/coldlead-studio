@@ -18,6 +18,8 @@ from coldlead.models import Company, Lead, RawSignals, make_lead_id
 from coldlead.settings import USER_AGENT
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
+MAX_RADIUS_M = 25_000
 OVERPASS_URLS = (
     "https://overpass-api.de/api/interpreter",
     "https://overpass.private.coffee/api/interpreter",
@@ -102,6 +104,7 @@ class SearchScope:
     radius_m: int | None = None
     name: str = ""
     label: str = ""
+    center: tuple[float, float] | None = None  # used to widen the search around the place
 
     def selector(self) -> tuple[str, str]:
         if self.kind == "area":
@@ -192,24 +195,72 @@ def geocode(client: httpx.Client, location: str, country: str | None = "IT") -> 
     osm_type, osm_id = place.get("osm_type"), int(place.get("osm_id", 0))
     south, north, west, east = (float(x) for x in place["boundingbox"])
     display = place.get("display_name", name)
+    if "lat" in place and "lon" in place:
+        center = (float(place["lat"]), float(place["lon"]))
+    else:
+        center = ((south + north) / 2, (west + east) / 2)
     if osm_type in ("relation", "way") and place["category"] in ("boundary", "place"):
         area_id = (3_600_000_000 if osm_type == "relation" else 2_400_000_000) + osm_id
-        return SearchScope("area", area_id=area_id, name=name, label=f"{display} ({kind_label})")
+        return SearchScope(
+            "area", area_id=area_id, name=name, label=f"{display} ({kind_label})", center=center
+        )
     if osm_type in ("relation", "way"):
         return SearchScope(
             "bbox",
             bbox=(south, north, west, east),
             name=name,
             label=f"{display} ({kind_label}, bounding box)",
+            center=center,
         )
     radius = PLACE_RADIUS_M.get(place.get("type", ""), 5_000)
     return SearchScope(
         "around",
-        point=(float(place["lat"]), float(place["lon"])),
+        point=center,
         radius_m=radius,
         name=name,
         label=f"{display} ({kind_label}, {radius / 1000:g} km radius)",
+        center=center,
     )
+
+
+def place_name_at(client: httpx.Client, lat: float, lon: float) -> str:
+    """Human name of the municipality at a point (reverse geocoding); empty on failure."""
+    try:
+        resp = client.get(
+            NOMINATIM_REVERSE_URL,
+            params={"lat": lat, "lon": lon, "format": "jsonv2", "zoom": 14, "addressdetails": 1},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except (httpx.HTTPError, ValueError):
+        return ""
+    address = data.get("address") or {}
+    for key in ("city", "town", "village", "municipality", "suburb", "county"):
+        if address.get(key):
+            return str(address[key])
+    return str(data.get("name") or "")
+
+
+def pin_scope(client: httpx.Client, lat: float, lon: float, radius_m: int) -> SearchScope:
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise LocationNotFound(f"Invalid coordinates {lat}, {lon}")
+    radius_m = int(min(max(radius_m, 200), MAX_RADIUS_M))
+    name = place_name_at(client, lat, lon) or f"{lat:.4f}, {lon:.4f}"
+    return SearchScope(
+        "around",
+        point=(lat, lon),
+        radius_m=radius_m,
+        name=name,
+        label=f"pin {lat:.4f}, {lon:.4f} near {name} ({radius_m / 1000:g} km radius)",
+        center=(lat, lon),
+    )
+
+
+def widening_radii(scope: SearchScope) -> list[int]:
+    """Radii to try when a scope returns too few leads (at most two extra queries)."""
+    start = scope.radius_m if scope.kind == "around" and scope.radius_m else 2_500
+    radii = sorted({min(start * 2, MAX_RADIUS_M), min(start * 4, MAX_RADIUS_M)})
+    return [r for r in radii if r > (scope.radius_m or 0)][:2]
 
 
 def _first(tags: dict[str, str], *keys: str) -> str:
@@ -278,6 +329,7 @@ class OSMProvider:
         )
         self.country = country
         self.last_scope: SearchScope | None = None
+        self.notes: list[str] = []
 
     def _overpass(self, query: str) -> list[dict]:
         """Try each public Overpass instance; retry once on 429/504 honouring Retry-After."""
@@ -304,17 +356,64 @@ class OSMProvider:
             f"Overpass API unavailable ({last_error}). Try again later or use --source demo."
         )
 
-    def search(self, niche: str, location: str, limit: int = 10) -> list[Lead]:
-        scope = geocode(self.client, location, self.country)
-        self.last_scope = scope
-        elements = self._overpass(build_query(tag_filters(niche), scope, max(limit * 3, 30)))
-
-        leads, seen = [], set()
-        for element in elements:
+    def _collect(self, niche: str, scope: SearchScope, limit: int, leads: list[Lead]) -> list[Lead]:
+        seen = {lead.company.name.lower() for lead in leads}
+        for element in self._overpass(build_query(tag_filters(niche), scope, max(limit * 3, 30))):
             lead = element_to_lead(element, niche, scope.name)
             if lead and lead.company.name.lower() not in seen:
                 seen.add(lead.company.name.lower())
                 leads.append(lead)
+        return leads
+
+    def search(
+        self,
+        niche: str,
+        location: str = "",
+        limit: int = 10,
+        *,
+        near: tuple[float, float] | None = None,
+        radius_m: int | None = None,
+        expand: bool = True,
+    ) -> list[Lead]:
+        """Search a named place or a pin (``near`` + ``radius_m``).
+
+        With ``expand`` (default) a search that finds fewer than ``limit`` leads is widened
+        around the same centre, up to 25 km, and the widening is reported in ``self.notes``.
+        """
+        self.notes = []
+        if near is not None:
+            scope = pin_scope(self.client, near[0], near[1], radius_m or 5_000)
+        else:
+            scope = geocode(self.client, location, self.country)
+        self.last_scope = scope
+        leads = self._collect(niche, scope, limit, [])
+
+        if expand and len(leads) < limit and scope.center:
+            for radius in widening_radii(scope):
+                before = len(leads)
+                wider = SearchScope(
+                    "around",
+                    point=scope.center,
+                    radius_m=radius,
+                    name=scope.name,
+                    label=f"{scope.label} → widened to {radius / 1000:g} km",
+                    center=scope.center,
+                )
+                try:
+                    leads = self._collect(niche, wider, limit, leads)
+                except ProviderError as exc:
+                    # Keep what the first search found: a busy Overpass must not cost results.
+                    self.notes.append(
+                        f"Could not widen the search ({exc}); showing {before} leads."
+                    )
+                    break
+                self.last_scope = wider
+                self.notes.append(
+                    f"Only {before} found in {scope.name}: widened the search to "
+                    f"{radius / 1000:g} km around it (+{len(leads) - before})."
+                )
+                if len(leads) >= limit:
+                    break
         # Most contactable first: website and phone make a lead actionable.
         leads.sort(
             key=lambda ld: (not ld.raw_signals.has_website, not ld.company.phone, ld.company.name)

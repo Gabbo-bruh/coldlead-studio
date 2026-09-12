@@ -142,6 +142,16 @@ def _title(session: Session) -> str:
     return " · ".join(p for p in (session.niche, session.location) if p)
 
 
+def _parse_pin(text: str | None) -> tuple[float, float] | None:
+    if not text:
+        return None
+    try:
+        lat, lon = (float(part) for part in text.replace(";", ",").split(","))
+    except ValueError as exc:
+        raise ProviderError(f'--near expects "LAT,LON", got {text!r}') from exc
+    return lat, lon
+
+
 def _load(store: SessionStore, session_id: str | None) -> Session:
     try:
         return store.load(session_id)
@@ -244,8 +254,23 @@ def scout(
     niche: Annotated[
         str, typer.Argument(help='Business niche, e.g. "Charter nautico", "dentists".')
     ],
-    location: Annotated[str, typer.Argument(help='City or area, e.g. "Portofino".')],
+    location: Annotated[
+        str, typer.Argument(help='City or area, e.g. "Portofino". Optional with --near.')
+    ] = "",
     limit: Annotated[int, typer.Option("--limit", "-n", min=1, max=60, help="Max leads.")] = 10,
+    near: Annotated[
+        str | None,
+        typer.Option(
+            "--near", help='Search around a map pin instead: "LAT,LON" (e.g. "44.35,9.15").'
+        ),
+    ] = None,
+    radius: Annotated[
+        float, typer.Option("--radius", "-r", min=0.2, max=25, help="Pin radius in km.")
+    ] = 5.0,
+    expand: Annotated[
+        bool,
+        typer.Option("--expand/--no-expand", help="Widen the area when fewer leads than --limit."),
+    ] = True,
     source: Annotated[
         Source, typer.Option(help="auto = Google (if key) → OpenStreetMap → demo.")
     ] = Source.auto,
@@ -271,6 +296,7 @@ def scout(
     from coldlead.pipeline import scout as run_scout
 
     try:
+        pin = _parse_pin(near)
         config = build_config(preset, weight, weights, season)
         with Progress(
             SpinnerColumn(),
@@ -284,6 +310,9 @@ def scout(
                 niche,
                 location,
                 limit,
+                near=pin,
+                radius_km=radius,
+                expand=expand,
                 source=source.value,
                 audit=audit,
                 ai=ai.value,

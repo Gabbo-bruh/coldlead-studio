@@ -35,6 +35,7 @@ const state = {
   lockin: false,
   data: null,
   kit: { lead: null, tab: "loom_script_90s", lang: "it", content: null },
+  pin: null, // { lat, lon, radius } when searching around a map pin
 };
 
 // ---------------------------------------------------------------- utilities
@@ -430,6 +431,101 @@ async function copyKit() {
   toast("Copied to clipboard");
 }
 
+// ---------------------------------------------------------------- map pin
+// Leaflet is vendored (static/vendor/leaflet); tiles come from openstreetmap.org, so the map
+// itself needs a connection — everything else in the dashboard keeps working offline.
+const mapState = { map: null, marker: null, circle: null, draft: null, radius: 5 };
+
+function pinIcon() {
+  return L.divIcon({ className: "pin-icon", html: "<span></span>", iconSize: [26, 26], iconAnchor: [13, 28] });
+}
+
+function updatePinCoords() {
+  const d = mapState.draft;
+  $("#pin-coords").textContent = d
+    ? `📍 ${d.lat.toFixed(5)}, ${d.lon.toFixed(5)} · radius ${mapState.radius} km`
+    : "no pin yet — click the map";
+  $("#pin-use").disabled = !d;
+}
+
+function placePin(lat, lon, fit = false) {
+  const m = mapState;
+  m.draft = { lat, lon };
+  if (!m.marker) {
+    m.marker = L.marker([lat, lon], { draggable: true, icon: pinIcon(), keyboard: true }).addTo(m.map);
+    m.circle = L.circle([lat, lon], {
+      radius: m.radius * 1000, color: "#f4845f", weight: 1.5, fillColor: "#f4845f", fillOpacity: 0.12,
+    }).addTo(m.map);
+    m.marker.on("drag", (e) => {
+      const p = e.target.getLatLng();
+      m.draft = { lat: p.lat, lon: p.lng };
+      m.circle.setLatLng(p);
+      updatePinCoords();
+    });
+  } else {
+    m.marker.setLatLng([lat, lon]);
+    m.circle.setLatLng([lat, lon]);
+  }
+  if (fit) m.map.fitBounds(m.circle.getBounds(), { padding: [30, 30] });
+  updatePinCoords();
+}
+
+function ensureMap() {
+  if (mapState.map) return;
+  if (typeof L === "undefined") throw new Error("Map library failed to load");
+  const map = L.map("map", { zoomControl: true, worldCopyJump: true }).setView([42.6, 12.5], 6);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  }).addTo(map);
+  map.on("click", (e) => placePin(e.latlng.lat, e.latlng.lng));
+  mapState.map = map;
+}
+
+async function goToPlace(query, dropPin) {
+  if (!query.trim()) return;
+  try {
+    const place = await (await api(`/api/geocode?q=${encodeURIComponent(query)}`)).json();
+    mapState.map.setView([place.lat, place.lon], 13);
+    if (dropPin) placePin(place.lat, place.lon, true);
+    $("#map-q").value = place.name;
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+async function openMap() {
+  try {
+    ensureMap();
+  } catch (err) {
+    toast(err.message, true);
+    return;
+  }
+  $("#map-modal").showModal();
+  setTimeout(() => mapState.map.invalidateSize(), 60); // the map was hidden while sized
+  if (state.pin) {
+    mapState.radius = state.pin.radius;
+    $("#radius").value = state.pin.radius;
+    $("#radius-out").textContent = `${state.pin.radius} km`;
+    if (mapState.circle) mapState.circle.setRadius(state.pin.radius * 1000);
+    setTimeout(() => placePin(state.pin.lat, state.pin.lon, true), 80);
+  } else {
+    const typed = $('#scout-form [name="location"]').value;
+    if (typed && !mapState.draft) setTimeout(() => goToPlace(typed, false), 80);
+  }
+  updatePinCoords();
+}
+
+function setPin(pin) {
+  state.pin = pin;
+  const location = $('#scout-form [name="location"]');
+  $("#pin-chip").hidden = !pin;
+  $("#pin-btn").textContent = pin ? "📍 Move pin" : "📍 Pin on map";
+  location.required = !pin;
+  location.placeholder = pin ? "optional — searching around the pin" : "Portofino";
+  if (pin) $("#pin-text").textContent = `📍 ${pin.lat.toFixed(4)}, ${pin.lon.toFixed(4)} · ${pin.radius} km`;
+}
+
 // ---------------------------------------------------------------- actions
 async function runScout(payload, button) {
   button.classList.add("busy");
@@ -479,8 +575,10 @@ function wire() {
   $("#scout-form").addEventListener("submit", (e) => {
     e.preventDefault();
     const f = new FormData(e.target);
-    runScout({ niche: f.get("niche"), location: f.get("location"), limit: Number(f.get("limit")) || 10,
-               source: f.get("source"), lang: state.meta.language }, $("#scout-form .btn"));
+    const payload = { niche: f.get("niche"), location: f.get("location").trim(), limit: Number(f.get("limit")) || 10,
+                      source: f.get("source"), lang: state.meta.language, expand: f.get("expand") === "on" };
+    if (state.pin) Object.assign(payload, { lat: state.pin.lat, lon: state.pin.lon, radius_km: state.pin.radius });
+    runScout(payload, $("#scout-form .btn"));
   });
   $("#demo-btn").addEventListener("click", (e) =>
     runScout({ niche: "Charter nautico", location: "Portofino", limit: 12, source: "demo" }, e.currentTarget));
@@ -520,6 +618,28 @@ function wire() {
   for (const dialog of $$("dialog")) {
     dialog.addEventListener("click", (e) => { if (e.target === dialog) dialog.close(); });
   }
+
+  $("#pin-btn").addEventListener("click", openMap);
+  $("#pin-clear").addEventListener("click", () => setPin(null));
+  $("#pin-use").addEventListener("click", () => {
+    const d = mapState.draft;
+    if (!d) return;
+    setPin({ lat: d.lat, lon: d.lon, radius: mapState.radius });
+    $("#map-modal").close();
+  });
+  $("#radius").addEventListener("input", (e) => {
+    mapState.radius = Number(e.target.value);
+    $("#radius-out").textContent = `${mapState.radius} km`;
+    if (mapState.circle) mapState.circle.setRadius(mapState.radius * 1000);
+    updatePinCoords();
+  });
+  $("#radius").addEventListener("change", () => {
+    if (mapState.circle) mapState.map.fitBounds(mapState.circle.getBounds(), { padding: [30, 30] });
+  });
+  $("#map-search").addEventListener("submit", (e) => {
+    e.preventDefault();
+    goToPlace($("#map-q").value, true);
+  });
 
   $("#theme-toggle").addEventListener("click", () => {
     const current = document.documentElement.dataset.theme

@@ -63,7 +63,7 @@ OpenStreetMap — free), with a live technical audit of every website.
 git clone https://github.com/gabrielecrema/coldlead-studio && cd coldlead-studio
 uv sync --all-extras          # or: pip install -e ".[all]"
 uv run coldlead --help
-uv run pytest                 # 154 tests, fully offline
+uv run pytest                 # 160 tests, fully offline
 ```
 </details>
 
@@ -117,6 +117,7 @@ flowchart LR
 | Command | What it does |
 |---|---|
 | `coldlead scout NICHE CITY [-n 10] [--source auto\|demo\|osm\|google]` | Discover, audit, enrich and cache a session |
+| `coldlead scout NICHE --near 44.35,9.15 [-r 5]` | Search around a map pin (radius in km); too few results widen the area automatically (`--no-expand` to disable) |
 | `coldlead rescore [-p PRESET] [-w w_A=4 ...] [--season ...] [--tier1 80]` | Re-rank the cached session instantly |
 | `coldlead explain <rank\|id\|name>` | Variable-by-variable breakdown with reasons |
 | `coldlead kit <rank\|id\|name> [--lang it\|en] [--ai]` | Loom · email · WhatsApp · VibeCoding prompt |
@@ -160,8 +161,9 @@ for Claude Code and Antigravity). The repo is also a **Claude Code plugin market
 
 A "thermal instrument" UI: every lead is a tick on a cold→hot scale; drag any of the 8 weight
 sliders and the ranking reorders live. Radar chart per lead (lead profile vs. your weights),
-Action Kit modal with IT/EN copy and one-click export. No build step, no CDN required, works offline,
-light & dark.
+Action Kit modal with IT/EN copy and one-click export. **📍 Pin on map**: drop a pin, pick a radius
+(0.5–25 km) and scout exactly that area. No build step, no CDN required (the map tiles come from
+OpenStreetMap), light & dark.
 
 <table><tr>
 <td><img src="docs/assets/action-kit.png" alt="Action Kit modal with Loom, email, WhatsApp and prompt tabs"></td>

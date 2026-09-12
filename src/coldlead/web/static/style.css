@@ -347,6 +347,36 @@ input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.25); }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .toast.error { background: var(--hot); color: #fff; }
 
+/* ---------- map pin ---------- */
+.pin-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.pin-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; border-radius: 999px;
+  font: 500 11.5px var(--mono); color: var(--ink);
+  background: color-mix(in srgb, var(--t3) 16%, var(--surface-2)); border: 1px solid color-mix(in srgb, var(--t3) 45%, transparent);
+}
+.pin-chip button { border: 0; background: none; color: var(--ink-3); padding: 0 4px; }
+.pin-chip button:hover { color: var(--ink); }
+.map-tools { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; margin: 16px 0 12px; }
+.map-search { display: flex; gap: 8px; flex: 1 1 260px; }
+.map-search input { flex: 1; }
+.map-radius { flex: 1 1 220px; }
+.map-radius output { color: var(--ink); font-weight: 600; }
+.map {
+  height: min(58vh, 520px); border-radius: 14px; border: 1px solid var(--line); overflow: hidden;
+}
+.map.leaflet-container { background: var(--bg); font: 12px var(--sans); }
+.map .leaflet-control-attribution { font-size: 10px; }
+.map-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+.pin-icon span {
+  display: block; width: 22px; height: 22px; margin: 2px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+  background: linear-gradient(135deg, var(--t3), var(--t4));
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, .9), 0 8px 18px rgba(0, 0, 0, .45);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .map .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.55); }
+}
+:root[data-theme="dark"] .map .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.55); }
+
 /* ---------- motion ---------- */
 @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes pop { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }

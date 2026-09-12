@@ -220,3 +220,39 @@ def test_plugin_manifest():
     assert manifest["name"] == "coldlead-studio"
     mcp_config = json.loads((ROOT / ".mcp.json").read_text(encoding="utf-8"))
     assert "coldlead" in mcp_config["mcpServers"]
+
+
+def test_web_pin_scout_and_geocode(client, monkeypatch):
+    from coldlead.providers import osm
+
+    bad = client.post("/api/scout", json={"niche": "Bar", "source": "demo"})
+    assert bad.status_code == 422 and "pin" in bad.json()["detail"]
+    pinned = client.post(
+        "/api/scout",
+        json={"niche": "Bar", "source": "demo", "lat": 44.35, "lon": 9.15, "radius_km": 3},
+    ).json()
+    assert pinned["session"]["location"].startswith("📍")
+    assert pinned["session"]["location"].endswith("· 3 km")
+
+    monkeypatch.setattr(
+        osm,
+        "geocode",
+        lambda client, q, country: osm.SearchScope("area", name="Chiavari", center=(44.32, 9.32)),
+    )
+    assert client.get("/api/geocode?q=Chiavari").json() == {
+        "lat": 44.32,
+        "lon": 9.32,
+        "name": "Chiavari",
+        "label": "",
+    }
+
+
+def test_cli_near_option():
+    out = cli(
+        "scout", "Bar", "--near", "44.35,9.15", "-r", "2", "--source", "demo", "-f", "json"
+    ).stdout
+    assert json.loads(out)["session"]["location"].endswith("· 2 km")
+    bad = runner.invoke(app, ["scout", "Bar", "--near", "nope"])
+    assert bad.exit_code == 1 and "LAT,LON" in bad.output
+    missing = runner.invoke(app, ["scout", "Bar", "--source", "demo"])
+    assert missing.exit_code == 1 and "map pin" in missing.output
