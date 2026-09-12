@@ -221,8 +221,11 @@ for item in score_leads(leads, resolve_config(preset="automation_first", weights
 ColdLead Studio audits **public homepages** with an identifying User-Agent, respects `robots.txt`
 by default and keeps request volumes small. You are responsible for complying with the terms of
 the data sources you enable and with privacy law (in the EU: B2B outreach on legitimate interest,
-relevant messages, an easy opt-out — the email template includes one). Demo data is synthetic and
-uses reserved `.example` domains. OpenStreetMap data © OpenStreetMap contributors (ODbL).
+relevant messages, an easy opt-out — the email template includes one). Google Places content may
+only be stored as the [Google Maps Platform terms](https://cloud.google.com/maps-platform/terms)
+allow: delete old sessions with `coldlead sessions --delete <id>`. Demo data is synthetic: names are
+marked "(demo)", phone numbers are zero-filled and domains use the reserved `.example` TLD.
+OpenStreetMap data © OpenStreetMap contributors (ODbL).
 
 ## Contributing
 
