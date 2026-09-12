@@ -8,12 +8,21 @@ import pytest
 from coldlead.providers.demo import demo_leads
 from coldlead.providers.google_places import GooglePlacesProvider, place_to_lead
 from coldlead.providers.osm import (
+    LocationNotFound,
     OSMProvider,
     ProviderError,
+    SearchScope,
     build_query,
     element_to_lead,
+    geocode,
+    pick_place,
     tag_filters,
 )
+
+
+@pytest.fixture(autouse=True)
+def no_sleep(monkeypatch):
+    monkeypatch.setattr("coldlead.providers.osm.time.sleep", lambda s: None)
 
 
 def test_demo_is_deterministic_and_marked():
@@ -53,12 +62,124 @@ def test_osm_tag_filters():
 
 
 def test_osm_build_query():
-    q = build_query(['["amenity"="dentist"]'], 3600044915, (0, 0, 0, 0), 30)
+    q = build_query(['["amenity"="dentist"]'], SearchScope("area", area_id=3600044915), 30)
     assert "area(id:3600044915)->.a;" in q
     assert 'nwr["amenity"="dentist"]["name"](area.a);' in q
     assert q.endswith("out tags 30;")
-    bbox = build_query(['["shop"="boat"]'], None, (44.3, 44.4, 9.1, 9.3), 10)
+    bbox = build_query(['["shop"="boat"]'], SearchScope("bbox", bbox=(44.3, 44.4, 9.1, 9.3)), 10)
     assert "(44.3,9.1,44.4,9.3)" in bbox
+    around = build_query(
+        ['["shop"="boat"]'], SearchScope("around", point=(44.3, 9.2), radius_m=11_132), 10
+    )
+    assert "(44.20000,9.06028,44.40000,9.33972)" in around  # indexed bbox, not (around:…)
+
+
+def test_overpass_error_remark_is_not_an_empty_result():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "nominatim" in request.url.host:
+            return httpx.Response(200, json=[TIGULLIO[2]])
+        if request.url.host == "overpass-api.de":
+            return httpx.Response(
+                200, json={"elements": [], "remark": "runtime error: Query timed out"}
+            )
+        return httpx.Response(
+            200, json={"elements": [{"type": "node", "id": 7, "tags": {"name": "Marina"}}]}
+        )
+
+    provider = OSMProvider(client=httpx.Client(transport=httpx.MockTransport(handler)))
+    assert [ld.company.name for ld in provider.search("nautico", "Tigullio", 5)] == ["Marina"]
+
+
+# Real Nominatim answers for "Tigullio": a nightclub in Malta ranks first.
+TIGULLIO = [
+    {
+        "category": "amenity",
+        "type": "nightclub",
+        "osm_type": "way",
+        "osm_id": 1,
+        "importance": 0.0001,
+        "address": {"country_code": "mt"},
+        "name": "Tigullio",
+        "boundingbox": ["35.9", "35.91", "14.4", "14.5"],
+    },
+    {
+        "category": "tourism",
+        "type": "hotel",
+        "osm_type": "node",
+        "osm_id": 2,
+        "importance": 0.0,
+        "address": {"country_code": "it"},
+        "name": "Tigullio",
+        "boundingbox": ["44.3", "44.31", "9.3", "9.31"],
+    },
+    {
+        "category": "place",
+        "type": "locality",
+        "osm_type": "node",
+        "osm_id": 3,
+        "importance": 0.0667,
+        "address": {"country_code": "it"},
+        "name": "Golfo del Tigullio",
+        "lat": "44.325",
+        "lon": "9.238",
+        "display_name": "Golfo del Tigullio, Santa Margherita Ligure",
+        "boundingbox": ["44.31", "44.33", "9.22", "9.24"],
+    },
+]
+
+
+def test_pick_place_ignores_venues_named_like_places():
+    assert pick_place(TIGULLIO, "IT")["name"] == "Golfo del Tigullio"
+    assert pick_place(TIGULLIO[:2], "IT") is None
+
+
+def test_pick_place_prefers_home_country_but_not_blindly():
+    paris_fr = {
+        "category": "boundary",
+        "type": "administrative",
+        "importance": 0.9,
+        "address": {"country_code": "fr"},
+        "name": "Paris",
+    }
+    paris_it = {
+        "category": "place",
+        "type": "hamlet",
+        "importance": 0.1,
+        "address": {"country_code": "it"},
+        "name": "Parisi",
+    }
+    assert pick_place([paris_it, paris_fr], "IT")["name"] == "Paris"
+    como_it = {**paris_it, "name": "Como", "category": "boundary", "importance": 0.5}
+    como_us = {**paris_fr, "name": "Como", "importance": 0.55, "address": {"country_code": "us"}}
+    assert pick_place([como_us, como_it], "IT")["name"] == "Como"
+
+
+def test_geocode_scopes():
+    def client_for(results):
+        return httpx.Client(
+            transport=httpx.MockTransport(lambda r: httpx.Response(200, json=results))
+        )
+
+    scope = geocode(client_for(TIGULLIO), "Tigullio", "IT")
+    assert scope.kind == "around" and scope.radius_m == 10_000 and scope.point == (44.325, 9.238)
+    assert "Golfo del Tigullio" in scope.label
+    boundary = [
+        {
+            "category": "boundary",
+            "type": "administrative",
+            "osm_type": "relation",
+            "osm_id": 43040,
+            "importance": 0.4,
+            "address": {"country_code": "it"},
+            "name": "Chiavari",
+            "boundingbox": ["44.30", "44.34", "9.28", "9.35"],
+        }
+    ]
+    assert geocode(client_for(boundary), "Chiavari").area_id == 3_600_043_040
+    bay = [{**boundary[0], "category": "natural", "type": "bay", "osm_type": "way", "name": "Baia"}]
+    assert geocode(client_for(bay), "Baia").kind == "bbox"
+    with pytest.raises(LocationNotFound):
+        geocode(client_for(TIGULLIO[:2]), "Tigullio")
 
 
 def test_osm_element_to_lead():
@@ -94,8 +215,12 @@ def test_osm_search_with_mock_network():
                 200,
                 json=[
                     {
+                        "category": "boundary",
+                        "type": "administrative",
                         "osm_type": "relation",
                         "osm_id": 44915,
+                        "importance": 0.6,
+                        "address": {"country_code": "it"},
                         "name": "Genova",
                         "boundingbox": ["44.3", "44.5", "8.6", "9.1"],
                     }
@@ -128,7 +253,6 @@ def test_osm_search_with_mock_network():
 
 
 def test_osm_retries_rate_limit_and_falls_back(monkeypatch):
-    monkeypatch.setattr("coldlead.providers.osm.time.sleep", lambda s: None)
     hits = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -137,8 +261,12 @@ def test_osm_retries_rate_limit_and_falls_back(monkeypatch):
                 200,
                 json=[
                     {
+                        "category": "place",
+                        "type": "town",
                         "osm_type": "node",
                         "osm_id": 1,
+                        "lat": "44.3",
+                        "lon": "9.2",
                         "name": "X",
                         "boundingbox": ["1", "2", "3", "4"],
                     }

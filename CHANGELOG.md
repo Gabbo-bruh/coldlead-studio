@@ -27,4 +27,4 @@ First public release: a ground-up rewrite of the original prototype around the
 - **Surfaces**: `coldlead` CLI (Typer + Rich), MCP server (stdio and streamable HTTP), agent skill for
   Claude Code and Antigravity, Claude Code plugin marketplace, local dashboard (FastAPI + vanilla JS).
 - Exports: JSON (schema v1.0.0), JSONL, compact LLM JSON, RFC 4180 CSV, Markdown report with kits.
-- Published JSON Schema, 148 offline tests, CI on Linux/macOS/Windows × Python 3.10–3.13.
+- Published JSON Schema, 154 offline tests, CI on Linux/macOS/Windows × Python 3.10–3.13.

@@ -438,7 +438,11 @@ async function runScout(payload, button) {
     const data = await res.json();
     await loadSessions(data.session.id);
     await rescore();
-    toast(`${data.session.lead_count} leads collected from ${data.session.source}`);
+    if (data.session.source === "demo" && payload.source !== "demo") {
+      toast("No live source reachable: showing DEMO data (fictitious businesses)", true);
+    } else {
+      toast(`${data.session.lead_count} leads collected from ${data.session.source}`);
+    }
   } catch (err) {
     toast(err.message, true);
   } finally {
