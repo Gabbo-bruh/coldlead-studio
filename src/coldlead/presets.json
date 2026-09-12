@@ -1,0 +1,65 @@
+{
+  "default_preset": "default_vibe_coding",
+  "presets": {
+    "default_vibe_coding": {
+      "name": "VibeCoding Default",
+      "description": "Balanced for micro-tools, interactive web apps and fast, high-converting sites.",
+      "weights": { "w_G": 3.0, "w_T": 2.5, "w_F": 2.0, "w_P": 1.5, "w_I": 1.5, "w_D": 1.5, "w_C": 1.0, "w_A": 1.0 },
+      "multipliers": {
+        "m_ads_active": 1.25,
+        "m_friction_high": 1.15,
+        "m_lockin_penalty": 0.85,
+        "t_win_autumn_winter": 1.4,
+        "t_win_spring": 1.0,
+        "t_win_summer_peak": 0.5,
+        "t_win_year_round": 1.0
+      },
+      "thresholds": { "tier_1_min": 85.0, "tier_2_min": 65.0 }
+    },
+    "automation_first": {
+      "name": "Automation & AI Agents First",
+      "description": "Maximum weight on manual processes to automate and reachable, responsive owners.",
+      "weights": { "w_G": 2.0, "w_T": 2.5, "w_F": 2.0, "w_P": 1.0, "w_I": 1.0, "w_D": 2.0, "w_C": 1.5, "w_A": 3.0 },
+      "multipliers": {
+        "m_ads_active": 1.2,
+        "m_friction_high": 1.1,
+        "m_lockin_penalty": 0.85,
+        "t_win_autumn_winter": 1.3,
+        "t_win_spring": 1.0,
+        "t_win_summer_peak": 0.6,
+        "t_win_year_round": 1.0
+      },
+      "thresholds": { "tier_1_min": 82.0, "tier_2_min": 65.0 }
+    },
+    "high_ticket_luxury": {
+      "name": "High Ticket & Luxury",
+      "description": "Yachts, villas, clinics, prime real estate: financial strength, foreign clients, big margins.",
+      "weights": { "w_G": 2.5, "w_T": 3.5, "w_F": 2.5, "w_P": 1.0, "w_I": 2.5, "w_D": 1.5, "w_C": 0.5, "w_A": 1.0 },
+      "multipliers": {
+        "m_ads_active": 1.3,
+        "m_friction_high": 1.15,
+        "m_lockin_penalty": 0.8,
+        "t_win_autumn_winter": 1.45,
+        "t_win_spring": 1.1,
+        "t_win_summer_peak": 0.4,
+        "t_win_year_round": 1.0
+      },
+      "thresholds": { "tier_1_min": 85.0, "tier_2_min": 70.0 }
+    },
+    "speedy_cashflow": {
+      "name": "Speedy Cashflow",
+      "description": "Terrible websites owned by easy-to-reach people: fast closes, quick restyling.",
+      "weights": { "w_G": 4.0, "w_T": 1.5, "w_F": 1.5, "w_P": 1.5, "w_I": 1.0, "w_D": 3.0, "w_C": 1.0, "w_A": 0.5 },
+      "multipliers": {
+        "m_ads_active": 1.25,
+        "m_friction_high": 1.2,
+        "m_lockin_penalty": 0.9,
+        "t_win_autumn_winter": 1.2,
+        "t_win_spring": 1.1,
+        "t_win_summer_peak": 0.7,
+        "t_win_year_round": 1.0
+      },
+      "thresholds": { "tier_1_min": 80.0, "tier_2_min": 60.0 }
+    }
+  }
+}
