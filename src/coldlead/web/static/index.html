@@ -118,6 +118,24 @@
         <div class="readout r-flag"><span class="mono micro">🛑 red flag</span><strong id="c-red_flag">0</strong></div>
       </section>
 
+      <section class="job" id="job" hidden aria-live="polite" aria-label="Scout progress">
+        <div class="job-head">
+          <span class="job-pulse" aria-hidden="true"></span>
+          <strong id="job-title">Scouting…</strong>
+          <span class="mono micro job-time" id="job-time">0.0s</span>
+          <button class="icon-btn job-close" id="job-close" type="button" aria-label="Hide" hidden>✕</button>
+        </div>
+        <ol class="job-steps" id="job-steps">
+          <li data-stage="discover"><span>1</span>Find businesses</li>
+          <li data-stage="audit"><span>2</span>Audit websites</li>
+          <li data-stage="enrich"><span>3</span>Insights</li>
+          <li data-stage="save"><span>4</span>Rank</li>
+        </ol>
+        <div class="job-bar" id="job-bar"><i id="job-fill"></i></div>
+        <p class="job-msg" id="job-msg">Starting…</p>
+        <details class="job-details"><summary class="mono micro">activity log</summary><ol class="job-log mono" id="job-log"></ol></details>
+      </section>
+
       <div id="notices" class="notices"></div>
       <section id="leads" class="leads" aria-live="polite"></section>
 

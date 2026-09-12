@@ -256,3 +256,26 @@ def test_cli_near_option():
     assert bad.exit_code == 1 and "LAT,LON" in bad.output
     missing = runner.invoke(app, ["scout", "Bar", "--source", "demo"])
     assert missing.exit_code == 1 and "map pin" in missing.output
+
+
+def test_web_scout_job_reports_progress(client):
+    import time as _time
+
+    job_id = client.post(
+        "/api/jobs/scout", json={"niche": "Hotel", "location": "Como", "limit": 4, "source": "demo"}
+    ).json()["job_id"]
+    for _ in range(100):
+        job = client.get(f"/api/jobs/{job_id}").json()
+        if job["status"] != "running":
+            break
+        _time.sleep(0.05)
+    assert job["status"] == "done", job
+    assert job["result"]["counts"]["total"] == 4
+    assert any("Generating demo prospects" in line for line in job["log"])
+    assert job["stage"] == "save" and job["done"] == job["total"] == 1
+    assert client.get("/api/jobs/nope").status_code == 404
+
+    failed = client.post(
+        "/api/jobs/scout", json={"niche": "Hotel", "location": "", "source": "demo"}
+    )
+    assert failed.status_code == 422  # validation happens before the job starts
