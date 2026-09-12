@@ -17,7 +17,7 @@ from coldlead.export import EXTENSIONS, FORMATS, MEDIA_TYPES, render
 from coldlead.models import Session
 from coldlead.outreach.action_kit import generate_action_kit
 from coldlead.providers import SOURCES
-from coldlead.providers.osm import ProviderError
+from coldlead.providers.osm import LocationNotFound, ProviderError
 from coldlead.scoring import score_leads, tier_counts
 from coldlead.settings import get_settings
 from coldlead.storage import SessionNotFound, SessionStore
@@ -157,6 +157,8 @@ def create_app(store: SessionStore | None = None) -> FastAPI:
                 lang=req.lang,
                 store=store,
             )
+        except LocationNotFound as exc:
+            raise HTTPException(422, str(exc)) from exc
         except ProviderError as exc:
             raise HTTPException(502, str(exc)) from exc
         if not session.leads:

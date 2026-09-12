@@ -63,7 +63,7 @@ OpenStreetMap — free), with a live technical audit of every website.
 git clone https://github.com/gabrielecrema/coldlead-studio && cd coldlead-studio
 uv sync --all-extras          # or: pip install -e ".[all]"
 uv run coldlead --help
-uv run pytest                 # 148 tests, fully offline
+uv run pytest                 # 154 tests, fully offline
 ```
 </details>
 

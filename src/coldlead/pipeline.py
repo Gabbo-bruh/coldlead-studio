@@ -22,7 +22,7 @@ from coldlead.enrich.tech_audit import AuditResult, audit_website
 from coldlead.models import Company, Lead, RawSignals, Session, make_lead_id
 from coldlead.providers import DemoProvider, Provider
 from coldlead.providers.google_places import GooglePlacesProvider
-from coldlead.providers.osm import OSMProvider, ProviderError
+from coldlead.providers.osm import LocationNotFound, OSMProvider, ProviderError
 from coldlead.settings import USER_AGENT, Settings, get_settings
 from coldlead.storage import SessionStore, new_session_id
 
@@ -58,28 +58,42 @@ def discover(
         elif source == "google":
             raise ProviderError("GOOGLE_PLACES_API_KEY is not set")
     if source in ("auto", "osm"):
-        chain.append(("osm", OSMProvider))
+        chain.append(("osm", lambda: OSMProvider(country=settings.country)))
     if source in ("auto", "demo"):
         chain.append(("demo", DemoProvider))
     if not chain:
         raise ProviderError(f"Unknown source '{source}'")
 
+    live_answered = False
     for name, factory in chain:
+        if name == "demo" and live_answered:
+            # A live source worked but found nothing: showing synthetic data would be misleading.
+            break
+        provider = factory()
         try:
-            leads = factory().search(niche, location, limit)
+            leads = provider.search(niche, location, limit)
+        except LocationNotFound:
+            raise  # a typo or ambiguous place: the user must fix it, not get demo data
         except (ProviderError, httpx.HTTPError, ValueError) as exc:
             if source != "auto":
                 raise ProviderError(str(exc)) from exc
             notices.append(f"{name} unavailable ({exc}); falling back")
             continue
+        scope = getattr(provider, "last_scope", None)
+        if scope is not None:
+            notices.append(f"OpenStreetMap searched in: {scope.label}")
         if leads:
             if name == "demo":
                 notices.append(
-                    "DEMO DATA: synthetic prospects for trying the tool. Use --source osm or set "
-                    "GOOGLE_PLACES_API_KEY for real businesses."
+                    "DEMO DATA: synthetic prospects, no live source was reachable. Use --source osm "
+                    "or set GOOGLE_PLACES_API_KEY for real businesses."
                 )
             return leads, name, notices
-        notices.append(f"{name} returned no results for '{niche}' in '{location}'")
+        live_answered = name != "demo"
+        notices.append(
+            f"{name} found no '{niche}' businesses in '{location}'. Try a municipality name or a "
+            "broader niche (e.g. 'barche', 'ristorante', 'hotel')."
+        )
     return [], "none", notices
 
 

@@ -6,7 +6,10 @@ modest result sizes. Data © OpenStreetMap contributors (ODbL).
 
 from __future__ import annotations
 
+import math
 import time
+from dataclasses import dataclass
+from typing import Literal
 
 import httpx
 
@@ -73,6 +76,10 @@ class ProviderError(RuntimeError):
     pass
 
 
+class LocationNotFound(ProviderError):
+    """The location text does not match any real place."""
+
+
 def tag_filters(niche: str) -> list[str]:
     for keyword, tags in KEYWORD_TAGS:
         if knowledge.keyword_in(keyword, niche):
@@ -84,32 +91,125 @@ def tag_filters(niche: str) -> list[str]:
     return [f'["name"~"{safe}",i]']
 
 
-def build_query(
-    filters: list[str], area_id: int | None, bbox: tuple[float, ...], limit: int
-) -> str:
-    if area_id is not None:
-        scope, selector = f"area(id:{area_id})->.a;", "(area.a)"
-    else:
-        south, north, west, east = bbox
-        scope, selector = "", f"({south},{west},{north},{east})"
+@dataclass(frozen=True)
+class SearchScope:
+    """Where to look: an administrative area, a bounding box or a radius around a point."""
+
+    kind: Literal["area", "bbox", "around"]
+    area_id: int | None = None
+    bbox: tuple[float, float, float, float] | None = None  # south, north, west, east
+    point: tuple[float, float] | None = None  # lat, lon
+    radius_m: int | None = None
+    name: str = ""
+    label: str = ""
+
+    def selector(self) -> tuple[str, str]:
+        if self.kind == "area":
+            return f"area(id:{self.area_id})->.a;", "(area.a)"
+        if self.kind == "around" and self.point:
+            # A square box around the point: bbox filters use Overpass' spatial index and are far
+            # faster than (around:…), which times out on public instances for large radii.
+            lat, lon = self.point
+            dlat = (self.radius_m or 5000) / 111_320
+            dlon = dlat / max(0.1, math.cos(math.radians(lat)))
+            return "", f"({lat - dlat:.5f},{lon - dlon:.5f},{lat + dlat:.5f},{lon + dlon:.5f})"
+        south, north, west, east = self.bbox or (0, 0, 0, 0)
+        return "", f"({south},{west},{north},{east})"
+
+
+def build_query(filters: list[str], scope: SearchScope, limit: int) -> str:
+    prefix, selector = scope.selector()
     body = "".join(f'nwr{f}["name"]{selector};' for f in filters)
-    return f"[out:json][timeout:25];{scope}({body});out tags {limit};"
+    return f"[out:json][timeout:25];{prefix}({body});out tags {limit};"
 
 
-def geocode(client: httpx.Client, location: str) -> tuple[int | None, tuple[float, ...], str]:
-    resp = client.get(NOMINATIM_URL, params={"q": location, "format": "jsonv2", "limit": 1})
+# Only real places are acceptable search scopes — never a restaurant or hotel that happens to be
+# called "Tigullio" or "Costa Smeralda". Lower value = preferred.
+GEO_CATEGORIES = {"boundary": 0, "place": 1, "natural": 2}
+# Search radius for places mapped as a single point.
+PLACE_RADIUS_M = {
+    "city": 10_000,
+    "town": 6_000,
+    "village": 3_000,
+    "hamlet": 1_500,
+    "suburb": 2_500,
+    "quarter": 1_500,
+    "neighbourhood": 1_000,
+    "locality": 10_000,
+    "island": 12_000,
+    "archipelago": 25_000,
+    "region": 25_000,
+    "county": 25_000,
+    "state": 40_000,
+    "bay": 12_000,
+    "peninsula": 12_000,
+    "cape": 8_000,
+    "coastline": 12_000,
+}
+
+
+def _nominatim(client: httpx.Client, location: str, country: str | None) -> list[dict]:
+    params = {"q": location, "format": "jsonv2", "limit": 10, "addressdetails": 1}
+    if country:
+        params["countrycodes"] = country.lower()
+    resp = client.get(NOMINATIM_URL, params=params)
     resp.raise_for_status()
-    results = resp.json()
-    if not results:
-        raise ProviderError(f"Location '{location}' not found on OpenStreetMap")
-    place = results[0]
+    return resp.json()
+
+
+def pick_place(candidates: list[dict], country: str | None) -> dict | None:
+    """Best geographic candidate: real places only, own country first, then importance."""
+    places = [c for c in candidates if c.get("category") in GEO_CATEGORIES]
+    if not places:
+        return None
+
+    def rank(c: dict) -> float:
+        same_country = (c.get("address") or {}).get("country_code", "").upper() == (
+            country or ""
+        ).upper()
+        return (
+            float(c.get("importance") or 0)
+            + (0.25 if same_country else 0)
+            - 0.05 * GEO_CATEGORIES[c["category"]]
+        )
+
+    return max(places, key=rank)
+
+
+def geocode(client: httpx.Client, location: str, country: str | None = "IT") -> SearchScope:
+    candidates = _nominatim(client, location, country) if country else []
+    if country:
+        time.sleep(1.0)  # Nominatim policy: at most one request per second
+    candidates += _nominatim(client, location, None)
+    place = pick_place(candidates, country)
+    if place is None:
+        raise LocationNotFound(
+            f"'{location}' was not found as a place on OpenStreetMap (only shops or venues with "
+            "that name). Try a municipality, e.g. 'Rapallo' or 'Santa Margherita Ligure'."
+        )
+    name = place.get("name") or location
+    kind_label = f"{place['category']}/{place.get('type', '?')}"
+    osm_type, osm_id = place.get("osm_type"), int(place.get("osm_id", 0))
     south, north, west, east = (float(x) for x in place["boundingbox"])
-    osm_id = int(place["osm_id"])
-    area_id = {"relation": 3_600_000_000 + osm_id, "way": 2_400_000_000 + osm_id}.get(
-        place["osm_type"]
+    display = place.get("display_name", name)
+    if osm_type in ("relation", "way") and place["category"] in ("boundary", "place"):
+        area_id = (3_600_000_000 if osm_type == "relation" else 2_400_000_000) + osm_id
+        return SearchScope("area", area_id=area_id, name=name, label=f"{display} ({kind_label})")
+    if osm_type in ("relation", "way"):
+        return SearchScope(
+            "bbox",
+            bbox=(south, north, west, east),
+            name=name,
+            label=f"{display} ({kind_label}, bounding box)",
+        )
+    radius = PLACE_RADIUS_M.get(place.get("type", ""), 5_000)
+    return SearchScope(
+        "around",
+        point=(float(place["lat"]), float(place["lon"])),
+        radius_m=radius,
+        name=name,
+        label=f"{display} ({kind_label}, {radius / 1000:g} km radius)",
     )
-    city = place.get("name") or location
-    return area_id, (south, north, west, east), city
 
 
 def _first(tags: dict[str, str], *keys: str) -> str:
@@ -170,10 +270,14 @@ def element_to_lead(element: dict, niche: str, city: str) -> Lead | None:
 class OSMProvider:
     name = "osm"
 
-    def __init__(self, client: httpx.Client | None = None, timeout: float = 30.0) -> None:
+    def __init__(
+        self, client: httpx.Client | None = None, timeout: float = 30.0, country: str | None = "IT"
+    ) -> None:
         self.client = client or httpx.Client(
             headers={"User-Agent": USER_AGENT, "Accept-Language": "it,en"}, timeout=timeout
         )
+        self.country = country
+        self.last_scope: SearchScope | None = None
 
     def _overpass(self, query: str) -> list[dict]:
         """Try each public Overpass instance; retry once on 429/504 honouring Retry-After."""
@@ -186,7 +290,13 @@ class OSMProvider:
                         time.sleep(min(float(resp.headers.get("Retry-After") or 2), 5.0))
                         continue
                     resp.raise_for_status()
-                    return resp.json().get("elements", [])
+                    data = resp.json()
+                    remark = str(data.get("remark") or "")
+                    if "error" in remark.lower():
+                        # Overpass reports timeouts/memory errors as HTTP 200 with a remark:
+                        # treating that as "no results" would silently hide real businesses.
+                        raise ValueError(remark)
+                    return data.get("elements", [])
                 except (httpx.HTTPError, ValueError) as exc:
                     last_error = exc
                     break
@@ -195,14 +305,13 @@ class OSMProvider:
         )
 
     def search(self, niche: str, location: str, limit: int = 10) -> list[Lead]:
-        area_id, bbox, city = geocode(self.client, location)
-        elements = self._overpass(
-            build_query(tag_filters(niche), area_id, bbox, max(limit * 3, 30))
-        )
+        scope = geocode(self.client, location, self.country)
+        self.last_scope = scope
+        elements = self._overpass(build_query(tag_filters(niche), scope, max(limit * 3, 30)))
 
         leads, seen = [], set()
         for element in elements:
-            lead = element_to_lead(element, niche, city)
+            lead = element_to_lead(element, niche, scope.name)
             if lead and lead.company.name.lower() not in seen:
                 seen.add(lead.company.name.lower())
                 leads.append(lead)

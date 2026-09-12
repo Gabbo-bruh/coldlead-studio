@@ -26,6 +26,9 @@ def test_scout_demo_persists_raw_session(store):
 
 def test_auto_falls_back_to_demo(monkeypatch, store):
     class Broken:
+        def __init__(self, **kwargs):
+            pass
+
         def search(self, *args, **kwargs):
             raise ProviderError("offline")
 
@@ -35,8 +38,42 @@ def test_auto_falls_back_to_demo(monkeypatch, store):
     assert any("osm unavailable" in n for n in session.notices)
 
 
+def test_empty_live_results_never_become_demo(monkeypatch, store):
+    class Empty:
+        last_scope = None
+
+        def __init__(self, **kwargs):
+            pass
+
+        def search(self, *args, **kwargs):
+            return []
+
+    monkeypatch.setattr(pipeline, "OSMProvider", Empty)
+    leads, source, notices = pipeline.discover("nautico", "Tigullio", 5, "auto", Settings())
+    assert (leads, source) == ([], "none")
+    assert "found no 'nautico' businesses" in notices[-1]
+
+
+def test_unknown_location_is_an_error_even_in_auto(monkeypatch):
+    from coldlead.providers.osm import LocationNotFound
+
+    class Lost:
+        def __init__(self, **kwargs):
+            pass
+
+        def search(self, *args, **kwargs):
+            raise LocationNotFound("'Atlantide' was not found")
+
+    monkeypatch.setattr(pipeline, "OSMProvider", Lost)
+    with pytest.raises(LocationNotFound):
+        pipeline.discover("Bar", "Atlantide", 3, "auto", Settings())
+
+
 def test_explicit_source_errors_propagate(monkeypatch):
     class Broken:
+        def __init__(self, **kwargs):
+            pass
+
         def search(self, *args, **kwargs):
             raise ProviderError("offline")
 
