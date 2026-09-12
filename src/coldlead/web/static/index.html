@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ColdLead Studio</title>
+  <meta name="color-scheme" content="dark light">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='1' x2='1' y2='0'%3E%3Cstop offset='0' stop-color='%232b59c3'/%3E%3Cstop offset='.5' stop-color='%231fb5c9'/%3E%3Cstop offset='1' stop-color='%23e63946'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='16' cy='16' r='12' fill='none' stroke='url(%23g)' stroke-width='5'/%3E%3Ccircle cx='16' cy='16' r='3' fill='%23e63946'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="panel" aria-label="Controls">
+      <header class="brand">
+        <svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true">
+          <defs>
+            <linearGradient id="brand-g" x1="0" y1="1" x2="1" y2="0">
+              <stop offset="0" stop-color="var(--t0)"/><stop offset=".45" stop-color="var(--t1)"/>
+              <stop offset=".75" stop-color="var(--t3)"/><stop offset="1" stop-color="var(--t4)"/>
+            </linearGradient>
+          </defs>
+          <circle cx="20" cy="20" r="15" fill="none" stroke="var(--line)" stroke-width="1"/>
+          <circle cx="20" cy="20" r="15" fill="none" stroke="url(#brand-g)" stroke-width="4" stroke-dasharray="72 100" stroke-linecap="round" transform="rotate(130 20 20)"/>
+          <circle cx="20" cy="20" r="3.2" fill="var(--t4)"/>
+        </svg>
+        <div>
+          <h1>ColdLead <em>Studio</em></h1>
+          <p class="mono micro">Precision Opportunity Score · <span id="version">…</span></p>
+        </div>
+      </header>
+
+      <section class="block">
+        <h2 class="label"><span>01</span> Scout</h2>
+        <form id="scout-form" class="stack" autocomplete="off">
+          <label class="field"><span>Niche</span><input name="niche" placeholder="Charter nautico" required maxlength="120"></label>
+          <label class="field"><span>Location</span><input name="location" placeholder="Portofino" required maxlength="120"></label>
+          <div class="row">
+            <label class="field"><span>Leads</span><input name="limit" type="number" value="10" min="1" max="60"></label>
+            <label class="field"><span>Source</span>
+              <select name="source">
+                <option value="auto">auto</option>
+                <option value="demo">demo (offline)</option>
+                <option value="osm">OpenStreetMap</option>
+                <option value="google">Google Places</option>
+              </select>
+            </label>
+          </div>
+          <button class="btn btn-primary" type="submit"><span class="btn-label">Run scout</span><span class="spinner" aria-hidden="true"></span></button>
+          <p class="hint micro" id="source-hint"></p>
+        </form>
+      </section>
+
+      <section class="block">
+        <h2 class="label"><span>02</span> Session</h2>
+        <div class="row row-tight">
+          <select id="session-select" aria-label="Cached session"></select>
+          <button class="icon-btn" id="delete-session" title="Delete this session" aria-label="Delete session">✕</button>
+        </div>
+        <p class="hint micro">Raw signals are cached. Calibrating never re-scrapes.</p>
+      </section>
+
+      <section class="block">
+        <h2 class="label"><span>03</span> Calibrate <button class="link" id="reset" type="button">reset</button></h2>
+        <div id="presets" class="presets" role="radiogroup" aria-label="Preset"></div>
+        <div id="sliders" class="sliders"></div>
+        <div class="row">
+          <label class="field"><span>Season</span><select id="season"></select></label>
+          <label class="field"><span>Hot ≥</span><input id="t1" type="number" min="0" max="100" step="1"></label>
+          <label class="field"><span>Warm ≥</span><input id="t2" type="number" min="0" max="100" step="1"></label>
+        </div>
+        <label class="check"><input type="checkbox" id="lockin"> Discard sites locked to an agency</label>
+      </section>
+
+      <footer class="panel-foot">
+        <span class="mono micro" id="latency">—</span>
+        <button class="icon-btn" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">◐</button>
+      </footer>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow mono" id="session-meta">no session</p>
+          <h2 class="session-title" id="session-title">Scrape once. <em>Re-score forever.</em></h2>
+        </div>
+        <div class="exports" role="group" aria-label="Export">
+          <span class="mono micro">export</span>
+          <button class="chip-btn" data-format="csv">CSV</button>
+          <button class="chip-btn" data-format="json">JSON</button>
+          <button class="chip-btn" data-format="markdown">MD</button>
+          <button class="chip-btn" data-format="compact">LLM</button>
+        </div>
+      </header>
+
+      <section class="thermo" aria-label="Thermal scale of all leads">
+        <div class="thermo-bar">
+          <div class="thermo-markers" id="markers"></div>
+          <div class="threshold" id="th-warm"><span>warm</span></div>
+          <div class="threshold" id="th-hot"><span>hot</span></div>
+        </div>
+        <div class="thermo-ticks mono micro"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+      </section>
+
+      <section class="readouts" id="readouts">
+        <div class="readout"><span class="mono micro">total</span><strong id="c-total">0</strong></div>
+        <div class="readout r-hot"><span class="mono micro">🔥 hot</span><strong id="c-hot">0</strong></div>
+        <div class="readout r-warm"><span class="mono micro">⚡ warm</span><strong id="c-warm">0</strong></div>
+        <div class="readout r-cold"><span class="mono micro">🧊 low</span><strong id="c-cold">0</strong></div>
+        <div class="readout r-flag"><span class="mono micro">🛑 red flag</span><strong id="c-red_flag">0</strong></div>
+      </section>
+
+      <div id="notices" class="notices"></div>
+      <section id="leads" class="leads" aria-live="polite"></section>
+
+      <div id="empty" class="empty" hidden>
+        <p class="eyebrow mono">nothing measured yet</p>
+        <h3>Start with a demo session — no keys, no network.</h3>
+        <p>Synthetic but realistic prospects for any niche and city. Then drag the sliders and watch the ranking reorder in milliseconds.</p>
+        <button class="btn btn-primary" id="demo-btn" type="button">Scout “Charter nautico” in Portofino</button>
+      </div>
+    </main>
+  </div>
+
+  <dialog id="explain-modal" class="modal" aria-labelledby="explain-title">
+    <form method="dialog" class="modal-close"><button class="icon-btn" aria-label="Close">✕</button></form>
+    <header class="modal-head">
+      <p class="eyebrow mono" id="explain-eyebrow"></p>
+      <h3 id="explain-title"></h3>
+    </header>
+    <div class="explain-grid">
+      <div class="radar-wrap">
+        <svg id="radar" viewBox="-205 -160 410 320" role="img" aria-label="Radar chart of the 8 POS variables"></svg>
+        <p class="legend micro mono"><i class="sw sw-lead"></i> lead profile <i class="sw sw-weight"></i> your weights</p>
+      </div>
+      <div class="explain-list" id="explain-list"></div>
+    </div>
+    <p class="formula mono" id="explain-formula"></p>
+    <div id="explain-flags"></div>
+  </dialog>
+
+  <dialog id="kit-modal" class="modal modal-wide" aria-labelledby="kit-title">
+    <form method="dialog" class="modal-close"><button class="icon-btn" aria-label="Close">✕</button></form>
+    <header class="modal-head">
+      <p class="eyebrow mono">🚀 action kit</p>
+      <h3 id="kit-title"></h3>
+      <p class="opp" id="kit-opp"></p>
+    </header>
+    <div class="kit-bar">
+      <div class="tabs" role="tablist">
+        <button role="tab" data-tab="loom_script_90s" aria-selected="true">🎬 Loom 90s</button>
+        <button role="tab" data-tab="cold_email">📧 Email</button>
+        <button role="tab" data-tab="whatsapp_opener">💬 WhatsApp</button>
+        <button role="tab" data-tab="vibecoding_prompt">🤖 Prompt</button>
+      </div>
+      <div class="kit-tools">
+        <div class="lang" role="group" aria-label="Language">
+          <button data-lang="it">IT</button><button data-lang="en">EN</button>
+        </div>
+        <button class="chip-btn" id="kit-ai" hidden>✨ AI polish</button>
+        <button class="btn btn-primary btn-sm" id="kit-copy">Copy</button>
+      </div>
+    </div>
+    <p class="mono micro kit-meta" id="kit-meta"></p>
+    <pre class="kit-text" id="kit-text" tabindex="0"></pre>
+  </dialog>
+
+  <div class="toast" id="toast" role="status"></div>
+  <script src="/static/app.js" type="module"></script>
+</body>
+</html>
