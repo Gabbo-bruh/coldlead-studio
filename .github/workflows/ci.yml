@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - run: uv run --only-group dev ruff check .
+      - run: uv run --only-group dev ruff format --check .
+
+  test:
+    name: test (${{ matrix.os }}, py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: uv sync --all-extras
+      - run: uv run pytest --cov --cov-report=term-missing
+      - name: CLI smoke test
+        run: |
+          uv run coldlead --version
+          uv run coldlead scout "Charter nautico" "Portofino" --source demo -n 5 -f compact
+          uv run coldlead rescore -p automation_first -w w_A=4 -f csv
+          uv run coldlead kit 1 --json
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - run: uv build
+      - name: Install the wheel in a clean environment
+        run: |
+          uv venv /tmp/wheel-test
+          uv pip install --python /tmp/wheel-test "coldlead-studio[all] @ file://$PWD/$(ls dist/*.whl)"
+          /tmp/wheel-test/bin/coldlead scout "Dentista" "Milano" --source demo -n 3 -f compact
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/

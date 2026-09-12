@@ -1,0 +1,15 @@
+name: Feature request
+description: A new variable, preset, provider, playbook or surface
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Which prospecting problem does it solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: If it touches the POS model, describe the signal, its 0–10 mapping and its default weight.
