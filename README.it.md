@@ -9,7 +9,7 @@ bisogno (e budget) di una micro-app realizzabile in 24 ore, ordinale con un mode
 
 [English](README.md) · [Italiano](README.it.md)
 
-<img src="docs/assets/dashboard-dark.png" alt="Dashboard di ColdLead Studio" width="100%">
+<img src="docs/assets/demo.gif" alt="Demo di ColdLead Studio: gli slider dei pesi riordinano i lead in tempo reale, poi radar e Action Kit" width="100%">
 
 </div>
 

@@ -238,8 +238,9 @@ input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.25); }
   padding: 14px 16px; border-radius: var(--radius); border: 1px solid var(--line);
   background: var(--surface); box-shadow: var(--shadow); backdrop-filter: blur(6px);
   transition: border-color .2s, transform .2s;
-  animation: rise .5s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--i, 0) * 35ms);
 }
+/* Entry animation only for newly inserted cards: reordering must not replay it. */
+.lead.enter { animation: rise .5s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--i, 0) * 35ms); }
 .lead:hover { border-color: color-mix(in srgb, var(--c) 55%, var(--line)); }
 .lead[data-tier="hot"] { --c: var(--hot); }
 .lead[data-tier="warm"] { --c: var(--warm); }

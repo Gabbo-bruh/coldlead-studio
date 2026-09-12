@@ -17,7 +17,7 @@ with a ready-to-send outreach kit.
 
 [English](README.md) · [Italiano](README.it.md)
 
-<img src="docs/assets/dashboard-dark.png" alt="ColdLead Studio dashboard: thermal scale of all leads, live weight sliders and ranked lead cards" width="100%">
+<img src="docs/assets/demo.gif" alt="ColdLead Studio demo: dragging the weight sliders re-ranks the leads live, then the radar and the Action Kit" width="100%">
 
 </div>
 

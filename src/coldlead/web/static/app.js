@@ -306,9 +306,10 @@ function render(data) {
     const oldScore = el ? Number(el.dataset.score) : null;
     if (!el) {
       el = document.createElement("article");
-      el.className = "lead";
+      el.className = "lead enter";
       el.dataset.id = d.id;
       el.style.setProperty("--i", index);
+      el.addEventListener("animationend", () => el.classList.remove("enter"), { once: true });
     }
     existing.delete(d.id);
     el.dataset.tier = d.pos_evaluation.tier_code;
@@ -318,7 +319,8 @@ function render(data) {
     return el;
   });
   existing.forEach((el) => el.remove());
-  ordered.forEach((el) => list.appendChild(el));
+  // Only touch the DOM order when it actually changed (moving nodes is what the FLIP animates).
+  ordered.forEach((el, i) => { if (list.children[i] !== el) list.insertBefore(el, list.children[i] || null); });
   if (reducedMotion()) return;
   for (const el of ordered) {
     const prev = before.get(el.dataset.id);
