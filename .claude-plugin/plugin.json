@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "description": "Scientific B2B lead scouting for VibeCoding studios: Precision Opportunity Score, instant re-scoring, outreach Action Kits. Adds the coldlead MCP server and the coldlead-scout skill.",
   "author": { "name": "Gabriele Crema" },
-  "homepage": "https://github.com/gabrielecrema/coldlead-studio",
-  "repository": "https://github.com/gabrielecrema/coldlead-studio",
+  "homepage": "https://github.com/Gabbo-bruh/coldlead-studio",
+  "repository": "https://github.com/Gabbo-bruh/coldlead-studio",
   "license": "MIT",
   "keywords": ["lead-generation", "lead-scoring", "prospecting", "mcp", "vibecoding"]
 }
