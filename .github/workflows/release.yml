@@ -37,6 +37,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   pypi:
+    # Opt-in: set the repository variable PUBLISH_TO_PYPI=true once Trusted Publishing is configured.
+    if: vars.PUBLISH_TO_PYPI == 'true'
     needs: build
     runs-on: ubuntu-latest
     environment: pypi

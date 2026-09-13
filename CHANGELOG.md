@@ -4,20 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
-
-### Added
-- 📍 Map pin search: `--near LAT,LON --radius KM` in the CLI, `latitude`/`longitude`/`radius_km`
-  in MCP, and a Leaflet map (vendored, BSD-2) in the dashboard to drop a pin and pick a radius.
-- Automatic widening (up to 25 km) when a search returns fewer leads than requested.
-
-### Fixed
-- Geocoding only accepts real places and prefers the configured country ("Tigullio" no longer
-  resolves to a nightclub in Malta); Overpass timeouts are no longer read as empty results; live
-  searches with no results never fall back to demo data.
-- Dashboard cards no longer replay their entry animation on every re-rank.
-
-## [1.0.0] — 2026-09-12
+## [1.0.0] — 2026-09-13
 
 First public release: a ground-up rewrite of the original prototype around the
 [project vision](PROJECT_VISION.md).
@@ -39,5 +26,11 @@ First public release: a ground-up rewrite of the original prototype around the
   VibeCoding prototype prompt; signal-driven offer playbooks per sector.
 - **Surfaces**: `coldlead` CLI (Typer + Rich), MCP server (stdio and streamable HTTP), agent skill for
   Claude Code and Antigravity, Claude Code plugin marketplace, local dashboard (FastAPI + vanilla JS).
+- 📍 **Map pin search** (CLI `--near`, MCP coordinates, Leaflet map in the dashboard) and automatic
+  widening up to 25 km when an area has fewer leads than requested.
+- **Live scout progress** in the dashboard (background jobs with stages, counters and activity log)
+  and in the CLI.
+- Robust geocoding: only real places, home-country preference, resolved area always reported;
+  Overpass errors are retried on other servers and never mistaken for empty results.
 - Exports: JSON (schema v1.0.0), JSONL, compact LLM JSON, RFC 4180 CSV, Markdown report with kits.
-- Published JSON Schema, 148 offline tests, CI on Linux/macOS/Windows × Python 3.10–3.13.
+- Published JSON Schema, 161 offline tests, CI on Linux/macOS/Windows × Python 3.10–3.13.
