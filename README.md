@@ -7,7 +7,7 @@ Scientific B2B lead scouting for VibeCoding studios — find the local businesse
 (and can afford) a 24-hour micro-app, rank them with a transparent 8-variable model, and walk away
 with a ready-to-send outreach kit.
 
-[![CI](https://github.com/gabrielecrema/coldlead-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/gabrielecrema/coldlead-studio/actions/workflows/ci.yml)
+[![CI](https://github.com/Gabbo-bruh/coldlead-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/Gabbo-bruh/coldlead-studio/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.10%20%E2%80%93%203.13-3776AB?logo=python&logoColor=white)
 ![MCP](https://img.shields.io/badge/MCP-server-8A2BE2)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -43,8 +43,8 @@ that, with numbers you can inspect:
 ## Quick start
 
 ```bash
-# with uv (recommended) — or: pipx install "coldlead-studio[all] @ git+https://github.com/gabrielecrema/coldlead-studio"
-uv tool install "coldlead-studio[all] @ git+https://github.com/gabrielecrema/coldlead-studio"
+# with uv (recommended) — or: pipx install "coldlead-studio[all] @ git+https://github.com/Gabbo-bruh/coldlead-studio"
+uv tool install "coldlead-studio[all] @ git+https://github.com/Gabbo-bruh/coldlead-studio"
 
 coldlead scout "Charter nautico" "Portofino" --source demo   # 30 seconds, no keys, no network
 coldlead rescore -p high_ticket_luxury                       # instant re-rank from the cache
@@ -60,7 +60,7 @@ OpenStreetMap — free), with a live technical audit of every website.
 <summary><b>Working from a clone</b></summary>
 
 ```bash
-git clone https://github.com/gabrielecrema/coldlead-studio && cd coldlead-studio
+git clone https://github.com/Gabbo-bruh/coldlead-studio && cd coldlead-studio
 uv sync --all-extras          # or: pip install -e ".[all]"
 uv run coldlead --help
 uv run pytest                 # 161 tests, fully offline
@@ -153,7 +153,7 @@ The `coldlead-scout` skill teaches an agent the workflow and the model. It lives
 for Claude Code and Antigravity). The repo is also a **Claude Code plugin marketplace**:
 
 ```text
-/plugin marketplace add gabrielecrema/coldlead-studio
+/plugin marketplace add Gabbo-bruh/coldlead-studio
 /plugin install coldlead-studio@coldlead-studio
 ```
 

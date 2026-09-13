@@ -19,7 +19,7 @@ from pathlib import Path
 
 from coldlead.config import coldlead_home
 
-USER_AGENT = "ColdLeadStudio/1.0 (+https://github.com/gabrielecrema/coldlead-studio)"
+USER_AGENT = "ColdLeadStudio/1.0 (+https://github.com/Gabbo-bruh/coldlead-studio)"
 
 
 def load_dotenv(*paths: Path) -> None:

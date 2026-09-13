@@ -56,10 +56,10 @@ all = ["coldlead-studio[web,mcp]"]
 coldlead = "coldlead.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/gabrielecrema/coldlead-studio"
-Documentation = "https://github.com/gabrielecrema/coldlead-studio#readme"
-Issues = "https://github.com/gabrielecrema/coldlead-studio/issues"
-Changelog = "https://github.com/gabrielecrema/coldlead-studio/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/Gabbo-bruh/coldlead-studio"
+Documentation = "https://github.com/Gabbo-bruh/coldlead-studio#readme"
+Issues = "https://github.com/Gabbo-bruh/coldlead-studio/issues"
+Changelog = "https://github.com/Gabbo-bruh/coldlead-studio/blob/main/CHANGELOG.md"
 
 [dependency-groups]
 dev = [

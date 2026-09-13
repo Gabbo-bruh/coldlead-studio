@@ -34,7 +34,7 @@ numeri verificabili:
 ## Avvio rapido
 
 ```bash
-uv tool install "coldlead-studio[all] @ git+https://github.com/gabrielecrema/coldlead-studio"
+uv tool install "coldlead-studio[all] @ git+https://github.com/Gabbo-bruh/coldlead-studio"
 
 coldlead scout "Charter nautico" "Portofino" --source demo   # 30 secondi, niente chiavi né rete
 coldlead rescore -p high_ticket_luxury                       # nuova classifica istantanea dalla cache
@@ -76,7 +76,7 @@ Specifica completa in [docs/scoring.md](docs/scoring.md) · visione originale in
 |---|---|
 | **CLI** | `coldlead scout / rescore / explain / kit / export / import / audit / web / mcp / doctor` |
 | **Server MCP** | `claude mcp add coldlead -- coldlead mcp` · per Claude Desktop, Cursor, Windsurf, Antigravity: `{"command": "coldlead", "args": ["mcp"]}` |
-| **Skill agente** | [`skills/coldlead-scout/SKILL.md`](skills/coldlead-scout/SKILL.md), sincronizzata in `.claude/skills/` e `.agents/skills/`; il repo è anche un marketplace di plugin Claude Code (`/plugin marketplace add gabrielecrema/coldlead-studio`) |
+| **Skill agente** | [`skills/coldlead-scout/SKILL.md`](skills/coldlead-scout/SKILL.md), sincronizzata in `.claude/skills/` e `.agents/skills/`; il repo è anche un marketplace di plugin Claude Code (`/plugin marketplace add Gabbo-bruh/coldlead-studio`) |
 | **Dashboard** | `coldlead web` — slider live, scala termica, radar, Action Kit IT/EN, export CSV/JSON/MD, **📍 pin sulla mappa** con raggio regolabile |
 
 ## Fonti dati e chiavi (tutte opzionali)

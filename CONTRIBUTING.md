@@ -5,7 +5,7 @@ Thanks for helping make ColdLead Studio better! 🎯
 ## Setup
 
 ```bash
-git clone https://github.com/gabrielecrema/coldlead-studio && cd coldlead-studio
+git clone https://github.com/Gabbo-bruh/coldlead-studio && cd coldlead-studio
 uv sync --all-extras
 uv run pytest            # the whole suite is offline and runs in seconds
 uv run ruff check . && uv run ruff format --check .
