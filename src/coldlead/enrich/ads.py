@@ -19,9 +19,15 @@ def _norm(text: str) -> str:
 
 
 def has_active_meta_ads(
-    company_name: str, token: str, country: str = "IT", client: httpx.Client | None = None
+    company_name: str,
+    token: str,
+    country: str | None = None,
+    client: httpx.Client | None = None,
 ) -> bool | None:
-    """``True``/``False`` when the Ad Library answers, ``None`` when it can't be checked."""
+    """``True``/``False`` when the Ad Library answers, ``None`` when it can't be checked.
+
+    ``country`` is the ISO code of the market to check; ``None`` searches every country.
+    """
     owns = client is None
     client = client or httpx.Client(timeout=15.0)
     try:
@@ -29,7 +35,7 @@ def has_active_meta_ads(
             AD_LIBRARY_URL,
             params={
                 "search_terms": company_name,
-                "ad_reached_countries": json.dumps([country]),
+                "ad_reached_countries": json.dumps([(country or "ALL").upper()]),
                 "ad_active_status": "ACTIVE",
                 "ad_type": "ALL",
                 "fields": "page_name",

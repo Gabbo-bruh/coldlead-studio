@@ -72,7 +72,7 @@ def _whatsapp(lead: Lead, lang: str, opportunity: str, issue: str) -> str:
     return text[:WHATSAPP_MAX_CHARS]
 
 
-def template_kit(lead: Lead, lang: str = "it") -> ActionKit:
+def template_kit(lead: Lead, lang: str = "en") -> ActionKit:
     lang = lang if lang in playbooks.LANGUAGES else "en"
     c, s = lead.company, lead.raw_signals
     opportunity = _opportunity(lead, lang)
@@ -260,7 +260,7 @@ AI_SYSTEM = (
 
 
 def generate_action_kit(
-    lead: Lead, lang: str = "it", *, ai: bool = False, settings: Settings | None = None
+    lead: Lead, lang: str = "en", *, ai: bool = False, settings: Settings | None = None
 ) -> ActionKit:
     base = template_kit(lead, lang)
     if not ai or settings is None or not settings.llm_enabled:

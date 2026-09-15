@@ -2,22 +2,36 @@
 
 ``analyze_html`` is a pure function (easy to test with fixtures); ``audit_website`` adds the
 network part: robots.txt, HTTPS fallback, timing and optional PageSpeed Insights.
+
+The URLs audited here come from third parties (map data, imported lists, an AI agent that may
+have read a hostile page), so every request is SSRF-guarded: only ``http``/``https``, only public
+IP addresses — checked before each request, at every redirect hop and again at connection time —
+and never more than :data:`MAX_RESPONSE_BYTES` read into memory.
 """
 
 from __future__ import annotations
 
+import contextlib
+import ipaddress
 import re
+import socket
 import time
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 from urllib.robotparser import RobotFileParser
 
+import httpcore
 import httpx
 from bs4 import BeautifulSoup
 
-from coldlead.settings import USER_AGENT
+from coldlead.settings import HTTP_HEADERS, USER_AGENT
 
 PAGESPEED_URL = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
+ALLOWED_SCHEMES = ("http", "https")
+MAX_RESPONSE_BYTES = 5 * 1024 * 1024  # a bigger homepage is truncated, never fully buffered
+MAX_ROBOTS_BYTES = 512 * 1024  # Google also stops reading robots.txt after 500 KiB
+MAX_REDIRECTS = 5
 
 BOOKING_WIDGETS = (
     "thefork",
@@ -121,8 +135,9 @@ class AuditResult:
 
 
 def normalize_url(url: str) -> str:
+    """Add ``https://`` to bare hosts. Other explicit schemes are kept, so the guard rejects them."""
     url = url.strip()
-    if not re.match(r"^https?://", url, re.I):
+    if not re.match(r"^[a-z][a-z0-9+.\-]*://", url, re.I):
         url = f"https://{url}"
     return url
 
@@ -178,6 +193,54 @@ def _find_agency(soup: BeautifulSoup) -> str | None:
     return None
 
 
+def _primary_language(code: str | None) -> str:
+    """``"en-GB"`` → ``"en"``; ``"x-default"`` and empty values → ``""``."""
+    primary = (code or "").strip().lower().replace("_", "-").split("-")[0]
+    return "" if primary in ("", "x") else primary
+
+
+def detect_multilingual(soup: BeautifulSoup, low: str) -> tuple[bool, str]:
+    """Whether a page is multilingual, with the evidence.
+
+    Declared ``<link rel="alternate" hreflang="…">`` alternates are authoritative: they describe
+    every language version whatever the server chose to send us. Language links and switcher
+    plugins are only a fallback for sites that declare no alternates at all.
+    """
+    html_tag = soup.find("html")
+    own = _primary_language(html_tag.get("lang") if html_tag else None)
+    declared = {
+        _primary_language(tag.get("hreflang"))
+        for tag in soup.find_all("link", attrs={"hreflang": True})
+        if "alternate" in [rel.lower() for rel in tag.get("rel") or []]
+    } - {""}
+    if declared:
+        # Pages often omit the self-referencing alternate: count the page's own language too.
+        languages = sorted(declared | ({own} if own else set()))
+        if len(languages) >= 2:
+            return True, f"hreflang alternates ({', '.join(languages)})"
+        return False, f"hreflang declares a single language ({languages[0]})"
+    # A link to /en/ only proves another version exists if the page itself is not English.
+    lang_links = sorted(
+        {
+            m.group(1)
+            for a in soup.find_all("a", href=True)
+            if (
+                m := re.search(
+                    r"(?:^|/)(en|de|fr|es|it|ru|nl|pt|zh)(?:/|$|-)",
+                    urlparse(a["href"]).path.lower(),
+                )
+            )
+        }
+        - {own}
+    )
+    if lang_links:
+        return True, "links to language versions (" + ", ".join(f"/{c}/" for c in lang_links) + ")"
+    switcher = next((w for w in LANG_SWITCHERS if w in low), None)
+    if switcher:
+        return True, f"language switcher ({switcher})"
+    return False, "no alternate language versions found"
+
+
 def estimate_performance(
     html: str, soup: BeautifulSoup, cms: str, mobile: bool, elapsed_ms: int | None
 ) -> int:
@@ -216,22 +279,9 @@ def analyze_html(html: str, base_url: str, elapsed_ms: int | None = None) -> Aud
     )
     s["cms_stack"] = detect_cms(html, soup)
 
-    hreflangs = {
-        (tag.get("hreflang") or "").lower()[:2]
-        for tag in soup.find_all("link", attrs={"hreflang": True})
-    } - {"", "x-"}
-    lang_links = {
-        m.group(1)
-        for a in soup.find_all("a", href=True)
-        if (
-            m := re.search(
-                r"(?:^|/)(en|de|fr|es|ru|nl|zh)(?:/|$|-)", urlparse(a["href"]).path.lower()
-            )
-        )
-    }
-    s["has_multilingual"] = (
-        len(hreflangs) >= 2 or bool(lang_links) or any(w in low for w in LANG_SWITCHERS)
-    )
+    s["has_multilingual"], languages_evidence = detect_multilingual(soup, low)
+    if s["has_multilingual"]:
+        result.notes.append(f"Multilingual: {languages_evidence}")
 
     widget = next((w for w in BOOKING_WIDGETS if w in low), None)
     booking_form = any(
@@ -291,16 +341,230 @@ def analyze_html(html: str, base_url: str, elapsed_ms: int | None = None) -> Aud
     return result
 
 
+# ------------------------------------------------------------------------------------------
+# SSRF guard
+# ------------------------------------------------------------------------------------------
+
+
+class BlockedURLError(ValueError):
+    """The URL is not a public ``http(s)`` address: fetching it could reach private services."""
+
+
+IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
+
+
+def resolve_host(host: str, port: int) -> list[str]:
+    """Every IP address ``host`` resolves to, in resolver order (tests replace this)."""
+    infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    return list(dict.fromkeys(str(info[4][0]) for info in infos))
+
+
+def is_public_ip(ip: IPAddress) -> bool:
+    """False for loopback, private, link-local (cloud metadata), multicast, reserved,
+    unspecified and shared addresses — also when wrapped in IPv4-mapped or 6to4 IPv6."""
+    embedded = (ip.ipv4_mapped or ip.sixtofour) if isinstance(ip, ipaddress.IPv6Address) else None
+    if embedded is not None and not is_public_ip(embedded):
+        return False
+    return ip.is_global and not (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
+
+
+def public_addresses(host: str, port: int) -> list[str]:
+    """The addresses of ``host`` if *all* of them are public; :class:`BlockedURLError` otherwise.
+
+    Raises ``OSError`` when the name does not resolve.
+    """
+    try:
+        candidates, literal = [str(ipaddress.ip_address(host.strip("[]")))], True
+    except ValueError:
+        candidates, literal = resolve_host(host, port), False
+    addresses = [ipaddress.ip_address(a.split("%")[0]) for a in candidates]
+    blocked = next((ip for ip in addresses if not is_public_ip(ip)), None)
+    if blocked is not None or not addresses:
+        where = f"{blocked} is" if literal else f"{host} resolves to"
+        raise BlockedURLError(
+            f"{where} a non-public address{'' if literal else f' ({blocked})'}: "
+            "refusing to fetch it"
+        )
+    return [str(ip) for ip in addresses]
+
+
+def ensure_public_url(url: str) -> None:
+    """Refuse anything but an ``http(s)`` URL whose host resolves only to public addresses."""
+    try:
+        parsed = httpx.URL(url)
+    except httpx.InvalidURL as exc:
+        raise BlockedURLError(f"invalid URL {url!r}") from exc
+    if parsed.scheme not in ALLOWED_SCHEMES:
+        raise BlockedURLError(
+            f"only http and https URLs can be audited, not '{parsed.scheme or '?'}:'"
+        )
+    if not parsed.host:
+        raise BlockedURLError(f"URL without a host: {url!r}")
+    try:
+        public_addresses(parsed.host, parsed.port or (443 if parsed.scheme == "https" else 80))
+    except OSError as exc:
+        raise httpx.ConnectError(f"cannot resolve {parsed.host}: {exc}") from exc
+
+
+class _PublicOnlyBackend(httpcore.SyncBackend):
+    """Resolve, vet and connect in a single step.
+
+    Checking a hostname and then letting the HTTP stack resolve it again leaves a window for DNS
+    rebinding (first answer public, second one 169.254.169.254). Here the socket only ever
+    connects to an address that was just verified; TLS still validates the certificate against
+    the hostname, because httpcore passes the origin host as SNI.
+    """
+
+    def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: Iterable | None = None,
+    ) -> httpcore.NetworkStream:
+        try:
+            addresses = public_addresses(host, port)
+        except OSError as exc:
+            raise httpcore.ConnectError(f"cannot resolve {host}: {exc}") from exc
+        error: Exception | None = None
+        for address in addresses:
+            try:
+                return super().connect_tcp(address, port, timeout, local_address, socket_options)
+            except (httpcore.ConnectError, httpcore.ConnectTimeout) as exc:
+                error = exc
+        raise error or httpcore.ConnectError(f"cannot connect to {host}")
+
+
+@contextlib.contextmanager
+def _httpx_errors(request: httpx.Request) -> Iterator[None]:
+    """Re-raise httpcore exceptions as their httpx namesakes (ConnectError, ReadTimeout…)."""
+    try:
+        yield
+    except Exception as exc:
+        if type(exc).__module__.startswith("httpcore"):
+            mapped = getattr(httpx, type(exc).__name__, httpx.TransportError)
+            if isinstance(mapped, type) and issubclass(mapped, httpx.TransportError):
+                raise mapped(str(exc), request=request) from exc
+        raise
+
+
+class _ResponseStream(httpx.SyncByteStream):
+    def __init__(self, stream: Iterable[bytes], request: httpx.Request) -> None:
+        self._stream, self._request = stream, request
+
+    def __iter__(self) -> Iterator[bytes]:
+        with _httpx_errors(self._request):
+            yield from self._stream
+
+    def close(self) -> None:
+        close = getattr(self._stream, "close", None)
+        if close is not None:
+            close()
+
+
+class PublicOnlyTransport(httpx.BaseTransport):
+    """An httpx transport that can only open connections to public IP addresses."""
+
+    def __init__(self) -> None:
+        self._pool = httpcore.ConnectionPool(
+            ssl_context=httpx.create_ssl_context(),
+            network_backend=_PublicOnlyBackend(),
+            max_connections=100,
+            max_keepalive_connections=20,
+            keepalive_expiry=5.0,
+        )
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        core_request = httpcore.Request(
+            method=request.method,
+            url=httpcore.URL(
+                scheme=request.url.raw_scheme,
+                host=request.url.raw_host,
+                port=request.url.port,
+                target=request.url.raw_path,
+            ),
+            headers=request.headers.raw,
+            content=request.stream,
+            extensions=request.extensions,
+        )
+        with _httpx_errors(request):
+            response = self._pool.handle_request(core_request)
+        return httpx.Response(
+            status_code=response.status,
+            headers=response.headers,
+            stream=_ResponseStream(response.stream, request),
+            extensions=response.extensions,
+        )
+
+    def close(self) -> None:
+        self._pool.close()
+
+
+def audit_client(timeout: float = 10.0) -> httpx.Client:
+    """The HTTP client for audits: neutral headers, SSRF-safe transport, manual redirects."""
+    return httpx.Client(headers=HTTP_HEADERS, timeout=timeout, transport=PublicOnlyTransport())
+
+
+@dataclass
+class Page:
+    url: str
+    status_code: int
+    text: str
+    truncated: bool = False
+
+
+def fetch_page(
+    client: httpx.Client,
+    url: str,
+    *,
+    max_bytes: int = MAX_RESPONSE_BYTES,
+    timeout: float | None = None,
+) -> Page:
+    """GET ``url`` safely: every hop (redirects are followed by hand) must pass
+    :func:`ensure_public_url`, and at most ``max_bytes`` of decoded body are ever read."""
+    options = {} if timeout is None else {"timeout": timeout}
+    for _ in range(MAX_REDIRECTS + 1):
+        ensure_public_url(url)
+        with client.stream("GET", url, follow_redirects=False, **options) as resp:
+            if resp.is_redirect:
+                request = resp.request
+                url = urljoin(str(resp.url), resp.headers["location"])
+                continue
+            body, truncated = bytearray(), False
+            for chunk in resp.iter_bytes():
+                body += chunk
+                if len(body) > max_bytes:
+                    del body[max_bytes:]
+                    truncated = True
+                    break
+            text = bytes(body).decode(resp.encoding or "utf-8", errors="replace")
+            return Page(str(resp.url), resp.status_code, text, truncated)
+    raise httpx.TooManyRedirects(f"more than {MAX_REDIRECTS} redirects", request=request)
+
+
 def robots_allows(client: httpx.Client, url: str) -> bool:
     parsed = urlparse(url)
     try:
-        resp = client.get(f"{parsed.scheme}://{parsed.netloc}/robots.txt", timeout=5)
-    except httpx.HTTPError:
-        return True
-    if resp.status_code >= 400:
+        page = fetch_page(
+            client,
+            f"{parsed.scheme}://{parsed.netloc}/robots.txt",
+            max_bytes=MAX_ROBOTS_BYTES,
+            timeout=5,
+        )
+    except (httpx.HTTPError, BlockedURLError):
+        return True  # no readable robots.txt: nothing forbids the audit
+    if page.status_code >= 400:
         return True
     parser = RobotFileParser()
-    parser.parse(resp.text.splitlines())
+    parser.parse(page.text.splitlines())
     return parser.can_fetch(USER_AGENT, url)
 
 
@@ -326,42 +590,49 @@ def audit_website(
     respect_robots: bool = True,
 ) -> AuditResult:
     owns_client = client is None
-    client = client or httpx.Client(
-        headers={"User-Agent": USER_AGENT, "Accept-Language": "it,en;q=0.8"},
-        timeout=10.0,
-        follow_redirects=True,
-    )
+    client = client or audit_client()
     target = normalize_url(url)
     try:
+        ensure_public_url(target)  # fail fast, before even asking for robots.txt
         if respect_robots and not robots_allows(client, target):
             result = AuditResult(url=target, signals={"has_website": True, "website_url": target})
             result.notes.append("robots.txt disallows automated audits: signals left unknown")
             return result
         started = time.perf_counter()
         try:
-            resp = client.get(target)
+            page = fetch_page(client, target)
         except httpx.ConnectError:
             if not target.startswith("https://"):
                 raise
             target = "http://" + target[len("https://") :]
-            resp = client.get(target)
+            page = fetch_page(client, target)
         elapsed = int((time.perf_counter() - started) * 1000)
-        final_url = str(resp.url)
-        if resp.status_code >= 400:
+        final_url = page.url
+        if page.status_code >= 400:
             result = AuditResult(url=final_url, reachable=False)
             result.signals = {
                 "has_website": True,
                 "website_url": final_url,
                 "has_ssl": final_url.startswith("https"),
             }
-            result.notes.append(f"Website answered HTTP {resp.status_code}")
+            result.notes.append(f"Website answered HTTP {page.status_code}")
             return result
-        result = analyze_html(resp.text, final_url, elapsed)
+        result = analyze_html(page.text, final_url, elapsed)
+        if page.truncated:
+            result.notes.append(
+                f"Homepage larger than {MAX_RESPONSE_BYTES // (1024 * 1024)} MB: "
+                "only the beginning was analysed"
+            )
         if pagespeed or pagespeed_key:
             score = pagespeed_score(client, final_url, pagespeed_key)
             if score is not None:
                 result.signals["lighthouse_performance"] = score
                 result.signals["performance_source"] = "lighthouse"
+        return result
+    except BlockedURLError as exc:
+        result = AuditResult(url=target, reachable=False)
+        result.signals = {"has_website": True, "website_url": target}
+        result.notes.append(f"Audit refused: {exc}")
         return result
     except httpx.HTTPError as exc:
         result = AuditResult(url=target, reachable=False)

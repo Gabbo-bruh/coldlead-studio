@@ -24,7 +24,8 @@ numeri verificabili:
 - 🧮 **Precision Opportunity Score (POS, 0–100)**: 8 variabili normalizzate, moltiplicatori di
   contesto e filtri red flag — ogni punto è spiegato.
 - ⚡ **Scoring disaccoppiato**: il lavoro lento (discovery, audit dei siti, insight AI) avviene una
-  volta sola e finisce in cache. Ricalcolare con pesi diversi è matematica pura: **~1 ms a sessione**.
+  volta sola e finisce in cache. Ricalcolare con pesi diversi è matematica pura: **pochi
+  millisecondi a sessione** (~0,2 ms per lead).
 - 🎛️ **Manomissione dei pesi post-scraping** da slider, flag CLI o argomenti MCP — oppure un preset.
 - 🚀 **Action Kit per ogni lead**: script Loom da 90 secondi, cold email chirurgica, opener WhatsApp
   (< 300 caratteri) e prompt VibeCoding per generare il prototipo con Cursor / Claude Code / Antigravity.
@@ -58,7 +59,7 @@ $$\mathrm{POS} = \left[\frac{\sum_i w_i \cdot V_i}{\sum_i w_i} \times 10\right] 
 | `w_T` | **V_ticket** — Valore ticket | 2.5 | Margini del settore: charter ≫ bar |
 | `w_F` | **F_fin** — Solidità finanziaria | 2.0 | Forma giuridica (S.p.A./S.r.l. vs ditta individuale) e dipendenti |
 | `w_P` | **C_press** — Pressione competitiva | 1.5 | Quanto i 2 migliori concorrenti locali della sessione sono avanti online |
-| `w_I` | **M_reach** — Frizione mercato estero | 1.5 | Hub turistici/lusso con sito solo in italiano |
+| `w_I` | **M_reach** — Frizione mercato estero | 1.5 | Hub turistici/lusso con sito in una sola lingua |
 | `w_D` | **A_decision** — Accesso al titolare | 1.5 | Titolare su WhatsApp/cellulare vs catena con sede altrove |
 | `w_C` | **B_care** — Cura del brand | 1.0 | Frequenza e tono delle risposte alle recensioni |
 | `w_A` | **U_vibe** — Superficie VibeCoding | 1.0 | Processi manuali sostituibili in 24h (menù PDF, niente booking, niente bot) |
@@ -68,7 +69,7 @@ $$\mathrm{POS} = \left[\frac{\sum_i w_i \cdot V_i}{\sum_i w_i} \times 10\right] 
 lock-in agenzia ×0.85. **Red flag** (scarto immediato): titolare che insulta o minaccia querele,
 liquidazione o chiusura. **Tier**: 🔥 Hot ≥ 85 · ⚡ Warm ≥ 65 · 🧊 Low.
 
-Specifica completa in [docs/scoring.md](docs/scoring.md) · visione originale in [PROJECT_VISION.md](PROJECT_VISION.md).
+Specifica completa in [docs/scoring.md](docs/scoring.md) · architettura in [docs/architecture.md](docs/architecture.md) · visione originale (nota storica) in [docs/design-notes/](docs/design-notes/2026-09-initial-vision.it.md).
 
 ## Le quattro superfici
 
@@ -94,12 +95,18 @@ Gerarchia a cascata: **preset di fabbrica** → **`~/.coldlead/config.json`** �
 d'ambiente** (`COLDLEAD_PRESET`, `COLDLEAD_W_A`, …) → **override runtime**. Crea un file di partenza
 con `coldlead config --init`; puoi definire preset personali con `"extends"`.
 
+**Lingua e paese.** L'outreach è in inglese di default. Con `COLDLEAD_COUNTRY=IT` la lingua
+diventa automaticamente l'italiano (e il geocoding preferisce località italiane); in alternativa
+`COLDLEAD_LANG=it` oppure `--lang it` su `scout` e `kit`.
+
 ## Uso responsabile
 
 L'audit legge solo homepage pubbliche, con User-Agent identificativo e rispetto di `robots.txt`.
 Sei responsabile del rispetto dei termini delle fonti e della normativa privacy (GDPR: outreach B2B
 su legittimo interesse, messaggi pertinenti, opt-out semplice — il template email lo include).
-I dati demo sono sintetici e usano domini riservati `.example`.
+I dati demo sono sintetici, marcati "(demo)", con numeri fittizi e domini riservati `.example`;
+seguono il luogo cercato tramite i [locale pack](src/coldlead/locales/) (Miami → aziende
+americane, Portofino → italiane).
 
 ## Licenza
 

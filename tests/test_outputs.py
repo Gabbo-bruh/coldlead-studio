@@ -191,11 +191,42 @@ def test_dotenv_loader(tmp_path, monkeypatch):
     from coldlead.settings import get_settings
 
     (tmp_path / "work" / ".env").write_text(
-        "GOOGLE_PLACES_API_KEY='abc'\n# comment\nexport COLDLEAD_LANG=en\n", encoding="utf-8"
+        "GOOGLE_PLACES_API_KEY='abc'\n# comment\nexport COLDLEAD_LANG=it\n", encoding="utf-8"
     )
     monkeypatch.delenv("GOOGLE_PLACES_API_KEY", raising=False)
     s = get_settings()
     assert s.google_places_api_key == "abc"
-    assert s.language == "en"
+    assert s.language == "it"
     monkeypatch.delenv("GOOGLE_PLACES_API_KEY", raising=False)
     monkeypatch.delenv("COLDLEAD_LANG", raising=False)
+
+
+@pytest.mark.parametrize(
+    ("env", "expected"),
+    [
+        ({}, (None, "en")),  # English and worldwide out of the box
+        ({"COLDLEAD_COUNTRY": "it"}, ("IT", "it")),  # the language follows the country…
+        ({"COLDLEAD_COUNTRY": "US"}, ("US", "en")),
+        ({"COLDLEAD_COUNTRY": "IT", "COLDLEAD_LANG": "en"}, ("IT", "en")),  # …unless explicit
+        ({"COLDLEAD_COUNTRY": "IT", "COLDLEAD_LANG": "auto"}, ("IT", "it")),
+        ({"COLDLEAD_LANG": "IT"}, (None, "it")),
+    ],
+)
+def test_language_defaults_to_english_and_follows_country(monkeypatch, env, expected):
+    from coldlead.settings import Settings, get_settings
+
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    s = get_settings(load_env_files=False)
+    assert (s.country, s.language) == expected
+    assert (Settings().country, Settings().language) == (None, "en")
+
+
+def test_action_kit_and_schema_default_to_english(leads):
+    from coldlead.outreach.action_kit import generate_action_kit
+
+    assert generate_action_kit(leads[0]).language == "en"
+    schema = json.loads(SCHEMA_FILE.read_text(encoding="utf-8"))
+    assert schema["$defs"]["ActionKit"]["properties"]["language"]["default"] == "en"
+    # the $id must be a URL that resolves (coldlead.dev is not a registered domain)
+    assert schema["$id"].startswith("https://raw.githubusercontent.com/Gabbo-bruh/coldlead-studio/")

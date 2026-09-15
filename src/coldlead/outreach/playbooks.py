@@ -46,7 +46,7 @@ CATEGORY_OFFERS: dict[str, Offer] = {
     "nautical": Offer(
         "charter_calculator",
         "Calcolatore istantaneo di preventivi charter (barca, skipper, extra, disponibilità) in IT/EN/DE con conferma su WhatsApp",
-        "Instant charter quote calculator (boat, skipper, extras, availability) in IT/EN/DE with WhatsApp confirmation",
+        "Instant charter quote calculator (boat, skipper, extras, availability) in several languages, with WhatsApp confirmation",
         _always,
     ),
     "restaurant": Offer(
@@ -132,7 +132,7 @@ LANDING_OFFER = Offer(
 MULTILINGUAL_OFFER = Offer(
     "multilingual_replatform",
     "Replatforming veloce in Next.js con versione multilingua (EN/DE/FR) per intercettare i clienti esteri",
-    "Fast Next.js replatforming with a multilingual version (EN/DE/FR) to capture foreign customers",
+    "Fast Next.js replatforming with a multilingual version to capture foreign customers",
     lambda lead: _exposed(lead) and lead.raw_signals.has_multilingual is False,
 )
 REPLATFORM_OFFER = Offer(
@@ -202,11 +202,11 @@ def offers(lead: Lead) -> list[Offer]:
     return sorted(applicable, key=lambda offer: -_relevance(offer, lead))
 
 
-def opportunity_summary(lead: Lead, lang: str = "it") -> str:
+def opportunity_summary(lead: Lead, lang: str = "en") -> str:
     return offers(lead)[0].text(lang)
 
 
-def frictions(lead: Lead, lang: str = "it") -> list[str]:
+def frictions(lead: Lead, lang: str = "en") -> list[str]:
     """Concrete, verifiable problems to mention in outreach (most persuasive first)."""
     s, city = lead.raw_signals, lead.company.city
     it = lang == "it"
@@ -238,7 +238,7 @@ def frictions(lead: Lead, lang: str = "it") -> list[str]:
         )
     if _exposed(lead) and s.has_multilingual is False:
         items.append(
-            f"Il sito è solo in italiano, ma a {city} arrivano molti clienti internazionali"
+            f"Il sito è in una sola lingua, ma a {city} arrivano molti clienti internazionali"
             if it
             else f"The site is single-language, yet {city} attracts many international customers"
         )
@@ -262,7 +262,7 @@ def frictions(lead: Lead, lang: str = "it") -> list[str]:
     return items
 
 
-def psychological_lever(lead: Lead, lang: str = "it") -> str:
+def psychological_lever(lead: Lead, lang: str = "en") -> str:
     s = lead.raw_signals
     it = lang == "it"
     if _exposed(lead) and s.has_multilingual is False:

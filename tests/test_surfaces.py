@@ -86,7 +86,8 @@ def test_cli_config_schema_doctor_version(isolated):
     assert (isolated / "config.json").exists()
     assert "my_luxury_automation" in cli("presets").stdout
     assert json.loads(cli("schema").stdout)["title"] == "LeadDossier"
-    assert "ColdLead Studio" in cli("doctor").stdout
+    doctor = cli("doctor").stdout
+    assert "ColdLead Studio" in doctor and "Target country" in doctor and "worldwide" in doctor
     assert "coldlead-studio" in cli("--version").stdout
 
 
@@ -169,6 +170,7 @@ def test_mcp_tools(store):
         "coldlead_generate_pitch",
         "coldlead_list",
         "coldlead_open_dashboard",
+        "coldlead_doctor",
     }
     text = _call(
         server,
@@ -197,6 +199,118 @@ def test_mcp_tools(store):
         )
     )
     assert scored["pos_evaluation"]["multipliers_applied"]["m_ads"] == 1.25
+    # the pitch language follows COLDLEAD_LANG (English unless configured)
+    assert _call(server, "coldlead_generate_pitch", {"lead": "1"}) == pitch
+
+
+def _read(server, uri: str) -> str:
+    return next(iter(asyncio.run(server.read_resource(uri)))).content
+
+
+def test_mcp_resources_expose_cached_dossiers(store):
+    import jsonschema
+    from mcp.server.mcpserver.exceptions import ResourceError
+
+    from coldlead.mcp_server import build_server
+
+    server = build_server(store)
+    assert {str(r.uri) for r in asyncio.run(server.list_resources())} == {
+        "coldlead://sessions",
+        "coldlead://schema/pos-lead-dossier",
+    }
+    assert {t.uri_template for t in asyncio.run(server.list_resource_templates())} == {
+        "coldlead://sessions/{session_id}",
+        "coldlead://sessions/{session_id}/leads/{lead_id}",
+    }
+    assert json.loads(_read(server, "coldlead://sessions")) == []
+    with pytest.raises(ResourceError, match="No sessions yet"):
+        _read(server, "coldlead://sessions/latest")
+
+    header = _call(
+        server,
+        "coldlead_search",
+        {"niche": "Yacht charter", "location": "Miami", "limit": 5, "source": "demo"},
+    )
+    (entry,) = json.loads(_read(server, "coldlead://sessions"))
+    assert entry["uri"] == f"coldlead://sessions/{entry['id']}" and entry["uri"] in header
+
+    ranked = json.loads(_read(server, entry["uri"]))
+    assert ranked == json.loads(_read(server, "coldlead://sessions/latest"))
+    assert ranked["session"]["id"] == entry["id"] and len(ranked["leads"]) == 5
+    schema = json.loads(_read(server, "coldlead://schema/pos-lead-dossier"))
+    for dossier in ranked["leads"]:
+        jsonschema.validate(dossier, schema)
+
+    second = ranked["leads"][1]
+    one = json.loads(_read(server, f"{entry['uri']}/leads/{second['id']}"))
+    assert (one["id"], one["rank"]) == (second["id"], 2)
+    with pytest.raises(ResourceError, match="not found"):
+        _read(server, f"{entry['uri']}/leads/lead_nothere")
+
+
+def test_mcp_prompts_are_workflows(store):
+    from coldlead.mcp_server import build_server
+
+    server = build_server(store)
+    assert {p.name for p in asyncio.run(server.list_prompts())} == {
+        "prospecting_run",
+        "audit_and_pitch",
+        "refine_ranking",
+    }
+
+    def prompt(name: str, args: dict) -> str:
+        return asyncio.run(server.get_prompt(name, args)).messages[0].content.text
+
+    run = prompt("prospecting_run", {"niche": "Dentists", "location": "Austin", "limit": "5"})
+    assert 'coldlead_search(niche="Dentists", location="Austin", limit=5' in run
+    assert "coldlead_doctor" in run and "by id" in run
+    focused = prompt("prospecting_run", {"niche": "Bar", "location": "Asti", "goal": "automation"})
+    assert 'goal: "automation"' in focused and "coldlead_rescore" in focused
+    pitch = prompt("audit_and_pitch", {"website_url": "https://x.example"})
+    assert "missing company name, niche, city" in pitch and "untrusted" in pitch
+    assert "Italian" in prompt(
+        "audit_and_pitch",
+        {
+            "website_url": "https://x.example",
+            "company_name": "A",
+            "niche": "B",
+            "city": "C",
+            "language": "it",
+        },
+    )
+    refine = prompt("refine_ranking", {"goal": "high ticket clients"})
+    assert "coldlead://sessions/latest" in refine and "Do not search again" in refine
+
+
+def test_mcp_doctor_reports_capabilities_without_secrets(store, monkeypatch):
+    import httpx
+
+    from coldlead import doctor
+    from coldlead.mcp_server import build_server
+
+    monkeypatch.setenv("GOOGLE_PLACES_API_KEY", "super-secret-value")
+    server = build_server(store)
+    text = _call(server, "coldlead_doctor", {})
+    assert "super-secret-value" not in text
+    report = json.loads(text)
+    checks = {c["key"]: c for c in report["checks"]}
+    assert checks["google_places"]["ok"] and checks["google_places"]["detail"] == (
+        "GOOGLE_PLACES_API_KEY"
+    )
+    assert report["discovery_sources"] == ["google", "osm", "demo"]
+    assert (report["language"], report["country"], report["cached_sessions"]) == ("en", None, 0)
+    assert "network" not in checks  # offline unless asked
+
+    up = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, text="OK")))
+    assert doctor.report(network=True, client=up, store=store)["discovery_sources"][1] == "osm"
+
+    def offline(request):
+        raise httpx.ConnectError("no route")
+
+    down = httpx.Client(transport=httpx.MockTransport(offline))
+    report = doctor.report(network=True, client=down, store=store)
+    assert report["discovery_sources"] == ["google", "demo"]
+    assert "unreachable" in {c["key"]: c for c in report["checks"]}["network"]["detail"]
 
 
 # --------------------------------------------------------------------------------------- Skills

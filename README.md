@@ -32,10 +32,11 @@ that, with numbers you can inspect:
 - 🧮 **Precision Opportunity Score (POS, 0–100)** from 8 normalized variables, context multipliers
   and hard red-flag filters — every point explained.
 - ⚡ **Decoupled scoring.** Slow work (discovery, website audits, AI insights) runs once and is
-  cached. Re-ranking with new weights is pure math: **~1 ms for a session**, from any surface.
+  cached. Re-ranking with new weights is pure math: **a few milliseconds per session** (~0.2 ms per
+  lead), from any surface.
 - 🎛️ **Tamper with the weights post-scraping** — sliders in the dashboard, flags in the CLI,
   arguments in MCP — or pick a preset.
-- 🚀 **Action Kit per lead**: 90-second Loom script, surgical cold email, WhatsApp opener
+- 🚀 **An Action Kit for every lead**: 90-second Loom script, surgical cold email, WhatsApp opener
   (< 300 chars) and a VibeCoding prompt to build the prototype in Cursor / Claude Code / Antigravity.
 - 🆓 **Zero-cost by default.** Works fully offline with realistic demo data, or live and free with
   OpenStreetMap. API keys only *upgrade* things.
@@ -46,7 +47,7 @@ that, with numbers you can inspect:
 # with uv (recommended) — or: pipx install "coldlead-studio[all] @ git+https://github.com/Gabbo-bruh/coldlead-studio"
 uv tool install "coldlead-studio[all] @ git+https://github.com/Gabbo-bruh/coldlead-studio"
 
-coldlead scout "Charter nautico" "Portofino" --source demo   # 30 seconds, no keys, no network
+coldlead scout "Yacht charter" "Miami" --source demo        # 30 seconds, no keys, no network
 coldlead rescore -p high_ticket_luxury                       # instant re-rank from the cache
 coldlead explain 1                                           # why is #1 on top?
 coldlead kit 1                                               # outreach kit for #1
@@ -63,7 +64,7 @@ OpenStreetMap — free), with a live technical audit of every website.
 git clone https://github.com/Gabbo-bruh/coldlead-studio && cd coldlead-studio
 uv sync --all-extras          # or: pip install -e ".[all]"
 uv run coldlead --help
-uv run pytest                 # 161 tests, fully offline
+uv run pytest                 # 235 tests, fully offline
 ```
 </details>
 
@@ -94,7 +95,8 @@ Every variable ships with human-readable reasons — see `coldlead explain` or t
 
 <img src="docs/assets/radar.png" alt="Explain view: radar chart of the 8 variables against the current weights, with the reason behind every value" width="100%">
 
-Read the full specification in [docs/scoring.md](docs/scoring.md).
+Read the full specification in [docs/scoring.md](docs/scoring.md) and how the code is organised in
+[docs/architecture.md](docs/architecture.md).
 
 ## Four surfaces, one engine
 
@@ -105,7 +107,7 @@ flowchart LR
         A --> E[Insights<br/>heuristics or LLM]
         E --> C[(Session cache<br/>raw signals JSON)]
     end
-    subgraph P2 [Phase 2 · score forever, ~1 ms]
+    subgraph P2 [Phase 2 · score forever, in milliseconds]
         C --> S[Pure POS engine]
         W[Presets · weights · season] --> S
         S --> O[CLI · Dashboard · MCP · CSV/JSON/MD]
@@ -122,7 +124,7 @@ flowchart LR
 | `coldlead explain <rank\|id\|name>` | Variable-by-variable breakdown with reasons |
 | `coldlead kit <rank\|id\|name> [--lang it\|en] [--ai]` | Loom · email · WhatsApp · VibeCoding prompt |
 | `coldlead export -f csv\|json\|jsonl\|compact\|markdown [-o FILE] [--with-kits]` | Standardized exports |
-| `coldlead import my_leads.csv [--city X] [--niche Y]` | Score *your own* list (IT/EN headers, `,` or `;`) |
+| `coldlead import my_leads.csv [--city X] [--niche Y]` | Score *your own* list (EN/IT headers, `,` or `;` — see [examples](examples/)) |
 | `coldlead audit https://example.com [--pagespeed]` | One-off technical audit |
 | `coldlead web` / `coldlead mcp` | Dashboard / MCP server |
 | `coldlead sessions` · `presets` · `config --init` · `schema` · `doctor` | Housekeeping |
@@ -131,8 +133,16 @@ Every command is pipe-friendly: `-f json`/`-f csv` writes clean data to stdout, 
 
 ### 2. MCP server
 
-Tools: `coldlead_search`, `coldlead_rescore`, `coldlead_explain`, `coldlead_generate_pitch`,
-`coldlead_audit`, `coldlead_score`, `coldlead_list`, `coldlead_open_dashboard`.
+All three MCP primitives:
+
+| Primitive | Exposed |
+|---|---|
+| **Tools** (9) | `coldlead_search` · `coldlead_rescore` · `coldlead_explain` · `coldlead_generate_pitch` · `coldlead_audit` · `coldlead_score` · `coldlead_list` · `coldlead_open_dashboard` · `coldlead_doctor` |
+| **Resources** | `coldlead://sessions` · `coldlead://sessions/{session_id}` (`latest` works) · `coldlead://sessions/{session_id}/leads/{lead_id}` · `coldlead://schema/pos-lead-dossier` |
+| **Prompts** | `prospecting_run` · `audit_and_pitch` · `refine_ranking` |
+
+Resources let an agent re-read ranked dossiers without spending a tool call; `coldlead_doctor`
+tells it which keys and sources are active before it plans.
 
 ```bash
 claude mcp add coldlead -- coldlead mcp            # Claude Code
@@ -143,7 +153,7 @@ claude mcp add coldlead -- coldlead mcp            # Claude Code
 { "mcpServers": { "coldlead": { "command": "coldlead", "args": ["mcp"] } } }
 ```
 
-Then just ask: *"Find 10 boat charters in Portofino, re-rank them favouring automation, and write
+Then just ask: *"Find 10 boat charters in Miami, re-rank them favouring automation, and write
 the WhatsApp opener for the best one."* Remote agents can use `coldlead mcp --transport streamable-http`.
 
 ### 3. Agent skill & Claude Code plugin
@@ -201,6 +211,10 @@ sliders, tool arguments).
 Factory presets: `default_vibe_coding` · `automation_first` · `high_ticket_luxury` · `speedy_cashflow`.
 Weights accept aliases: `-w automation=3` equals `-w w_A=3`.
 
+**Language & country.** Outreach copy is English by default. `COLDLEAD_COUNTRY=IT` switches it to
+Italian automatically (and makes geocoding prefer Italian places); `COLDLEAD_LANG=it` or
+`--lang it` on `scout` / `kit` sets the language explicitly.
+
 ## Output contract
 
 Every surface emits the same **`POSLeadDossier` v1.0.0** record — `company`, `raw_signals`,
@@ -213,7 +227,7 @@ red flags) and optionally `action_kit`. The JSON Schema is published in
 ```python
 from coldlead import demo_leads, resolve_config, score_leads
 
-leads = demo_leads("Dentista", "Milano", limit=8)
+leads = demo_leads("Dentists", "Austin", limit=8)
 for item in score_leads(leads, resolve_config(preset="automation_first", weights={"w_G": 4})):
     print(item.rank, item.evaluation.final_score, item.lead.company.name)
 ```
@@ -226,13 +240,17 @@ the data sources you enable and with privacy law (in the EU: B2B outreach on leg
 relevant messages, an easy opt-out — the email template includes one). Google Places content may
 only be stored as the [Google Maps Platform terms](https://cloud.google.com/maps-platform/terms)
 allow: delete old sessions with `coldlead sessions --delete <id>`. Demo data is synthetic: names are
-marked "(demo)", phone numbers are zero-filled and domains use the reserved `.example` TLD.
+marked "(demo)", phone numbers are fictitious (zero-filled, or in the `555-01xx` block reserved for
+fiction) and domains use the reserved `.example` TLD. Demo data follows the searched place through
+[locale packs](src/coldlead/locales/): Miami gets American businesses, Portofino Italian ones.
 OpenStreetMap data © OpenStreetMap contributors (ODbL).
 
 ## Contributing
 
 Issues and PRs are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). The scoring engine is pure
 and heavily tested, so new variables, presets, playbooks and providers are easy to add.
+**Add your country**: a locale pack (names, legal forms, phone formats, local keywords) is a single
+file in [`src/coldlead/locales/`](src/coldlead/locales/).
 
 ## License
 

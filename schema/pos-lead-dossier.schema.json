@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://coldlead.dev/schema/pos-lead-dossier/1.0.0.json",
+  "$id": "https://raw.githubusercontent.com/Gabbo-bruh/coldlead-studio/main/schema/pos-lead-dossier.schema.json",
   "$defs": {
     "ActionKit": {
       "properties": {
         "language": {
-          "default": "it",
+          "default": "en",
           "title": "Language",
           "type": "string"
         },

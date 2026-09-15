@@ -16,7 +16,7 @@ import httpx
 
 from coldlead import knowledge
 from coldlead.models import Company, Lead, RawSignals, make_lead_id
-from coldlead.settings import USER_AGENT
+from coldlead.settings import HTTP_HEADERS
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
@@ -31,27 +31,49 @@ OVERPASS_URLS = (
 KEYWORD_TAGS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("dent", ('["amenity"="dentist"]', '["healthcare"="dentist"]')),
     ("veterinar", ('["amenity"="veterinary"]',)),
+    ("vet ", ('["amenity"="veterinary"]',)),
+    ("animal hospital", ('["amenity"="veterinary"]',)),
     ("pizzeria", ('["amenity"="restaurant"]["cuisine"~"pizza"]',)),
     ("sushi", ('["amenity"="restaurant"]["cuisine"~"sushi|japanese"]',)),
     ("gelat", ('["amenity"="ice_cream"]', '["shop"="ice_cream"]')),
+    ("ice cream", ('["amenity"="ice_cream"]', '["shop"="ice_cream"]')),
     ("gioiell", ('["shop"="jewelry"]',)),
     ("jewel", ('["shop"="jewelry"]',)),
     ("ottic", ('["shop"="optician"]',)),
+    ("optician", ('["shop"="optician"]',)),
+    ("eyewear", ('["shop"="optician"]',)),
     ("fiorist", ('["shop"="florist"]',)),
+    ("florist", ('["shop"="florist"]',)),
+    ("flower", ('["shop"="florist"]',)),
     ("parrucch", ('["shop"="hairdresser"]',)),
+    ("hairdress", ('["shop"="hairdresser"]',)),
+    ("hair salon", ('["shop"="hairdresser"]',)),
     ("barber", ('["shop"="hairdresser"]',)),
     ("avvocat", ('["office"="lawyer"]',)),
     ("lawyer", ('["office"="lawyer"]',)),
+    ("attorney", ('["office"="lawyer"]',)),
+    ("law firm", ('["office"="lawyer"]',)),
     ("commercialist", ('["office"~"accountant|tax_advisor"]',)),
+    ("accountant", ('["office"~"accountant|tax_advisor"]',)),
+    ("cpa ", ('["office"~"accountant|tax_advisor"]',)),
     ("notai", ('["office"="notary"]',)),
+    ("notary", ('["office"="notary"]',)),
     ("architett", ('["office"="architect"]',)),
+    ("architect", ('["office"="architect"]',)),
     ("assicuraz", ('["office"="insurance"]',)),
+    ("insurance", ('["office"="insurance"]',)),
     ("agenzia viaggi", ('["shop"="travel_agency"]', '["office"="travel_agent"]')),
+    ("travel agen", ('["shop"="travel_agency"]', '["office"="travel_agent"]')),
     ("camping", ('["tourism"="camp_site"]',)),
+    ("campground", ('["tourism"="camp_site"]',)),
+    ("campsite", ('["tourism"="camp_site"]',)),
     ("b&b", ('["tourism"="guest_house"]',)),
     ("ncc", ('["amenity"="taxi"]', '["office"="taxi"]')),
+    ("chauffeur", ('["amenity"="taxi"]', '["office"="taxi"]')),
+    ("limousine", ('["amenity"="taxi"]', '["office"="taxi"]')),
     ("taxi", ('["amenity"="taxi"]',)),
     ("stabilimento balneare", ('["leisure"="beach_resort"]',)),
+    ("beach club", ('["leisure"="beach_resort"]',)),
 )
 
 CATEGORY_TAGS: dict[str, tuple[str, ...]] = {
@@ -180,7 +202,8 @@ def pick_place(candidates: list[dict], country: str | None) -> dict | None:
     return max(places, key=rank)
 
 
-def geocode(client: httpx.Client, location: str, country: str | None = "IT") -> SearchScope:
+def geocode(client: httpx.Client, location: str, country: str | None = None) -> SearchScope:
+    """Resolve a place name. With ``country`` (ISO code) places in that country are preferred."""
     candidates = _nominatim(client, location, country) if country else []
     if country:
         time.sleep(1.0)  # Nominatim policy: at most one request per second
@@ -189,7 +212,7 @@ def geocode(client: httpx.Client, location: str, country: str | None = "IT") -> 
     if place is None:
         raise LocationNotFound(
             f"'{location}' was not found as a place on OpenStreetMap (only shops or venues with "
-            "that name). Try a municipality, e.g. 'Rapallo' or 'Santa Margherita Ligure'."
+            "that name). Try a city or municipality, e.g. 'Miami Beach' or 'Santa Margherita Ligure'."
         )
     name = place.get("name") or location
     kind_label = f"{place['category']}/{place.get('type', '?')}"
@@ -326,12 +349,10 @@ class OSMProvider:
         self,
         client: httpx.Client | None = None,
         timeout: float = 30.0,
-        country: str | None = "IT",
+        country: str | None = None,
         on_step: Callable[[str], None] | None = None,
     ) -> None:
-        self.client = client or httpx.Client(
-            headers={"User-Agent": USER_AGENT, "Accept-Language": "it,en"}, timeout=timeout
-        )
+        self.client = client or httpx.Client(headers=HTTP_HEADERS, timeout=timeout)
         self.country = country
         self.last_scope: SearchScope | None = None
         self.notes: list[str] = []

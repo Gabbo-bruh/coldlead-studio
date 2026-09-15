@@ -12,6 +12,7 @@ ENV_KEYS = (
     "COLDLEAD_PRESET",
     "COLDLEAD_SEASON",
     "COLDLEAD_LANG",
+    "COLDLEAD_COUNTRY",
     "COLDLEAD_LLM_PROVIDER",
     "COLDLEAD_LLM_MODEL",
     "GEMINI_API_KEY",
@@ -39,6 +40,18 @@ def isolated(tmp_path, monkeypatch):
     work.mkdir()
     monkeypatch.chdir(work)
     return home
+
+
+PUBLIC_IP = "93.184.215.14"
+
+
+@pytest.fixture(autouse=True)
+def offline_dns(monkeypatch):
+    """No test touches real DNS: every hostname resolves to one public address.
+
+    SSRF tests override ``resolve_host`` again to simulate private or rebinding answers.
+    """
+    monkeypatch.setattr("coldlead.enrich.tech_audit.resolve_host", lambda host, port: [PUBLIC_IP])
 
 
 @pytest.fixture

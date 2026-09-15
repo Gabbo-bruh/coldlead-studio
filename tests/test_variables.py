@@ -96,6 +96,10 @@ def test_financial_strength_uses_parsed_name_and_employees():
         employees_estimate=0,
     )
     assert financial_strength(make_lead(company=tiny))[0] == 2.0
+    # explanations read in English; the stored enum value (schema contract) is unchanged
+    assert financial_strength(make_lead(company=tiny))[1][0] == "Legal form: sole trader → 3.0"
+    assert tiny.legal_form.value == "Ditta Individuale"
+    assert set(knowledge.LEGAL_FORM_LABELS) == set(knowledge.LEGAL_FORM_SCORES)
 
 
 def test_competitive_pressure_sources():
@@ -123,6 +127,11 @@ def test_owner_access_ladder():
     assert owner_access(make_lead(company=landline))[0] == 6.0
     nothing = Company(name="Gianni", niche="x", city="y")
     assert owner_access(make_lead(company=nothing))[0] == 3.0
+    # North American numbers carry no mobile prefix: only an explicit channel says "mobile".
+    us_mobile = Company(name="Joe", niche="x", city="Miami", phone="+1 305-555-0101")
+    assert owner_access(make_lead(company=us_mobile))[0] == 6.0
+    us_mobile.contact_channels.append("Mobile")
+    assert owner_access(make_lead(company=us_mobile))[0] == 7.5
 
 
 @pytest.mark.parametrize(
@@ -149,3 +158,32 @@ def test_keyword_boundaries():
     assert knowledge.detect_category("Qualcosa di strano") == "generic"
     assert knowledge.is_tourist_hub("Santa Margherita Ligure")
     assert not knowledge.is_tourist_hub("Voghera")
+
+
+@pytest.mark.parametrize(
+    ("english", "italian"),
+    [
+        ("Lawyer", "Avvocato"),
+        ("Architect", "Architetto"),
+        ("Notary", "Notaio"),
+        ("Accountant", "Commercialista"),
+        ("Orthodontist", "Ortodontista"),
+        ("Physiotherapist", "Fisioterapista"),
+        ("Auto mechanic", "Autofficina"),
+        ("Optician", "Ottica"),
+        ("Florist", "Fiorista"),
+        ("Pastry shop", "Pasticceria"),
+        ("Limousine service", "NCC"),
+    ],
+)
+def test_english_niches_score_like_their_italian_twins(english, italian):
+    assert knowledge.detect_category(english) == knowledge.detect_category(italian) != "generic"
+    assert knowledge.ticket_value(english)[0] == knowledge.ticket_value(italian)[0]
+
+
+@pytest.mark.parametrize(
+    "niche", ["Surgelati", "Limoncello", "Consultorio familiare", "Salone del mobile"]
+)
+def test_english_stems_do_not_capture_italian_words(niche):
+    assert knowledge.detect_category(niche) == "generic"
+    assert knowledge.ticket_value(niche) == (knowledge.DEFAULT_TICKET_VALUE, None)

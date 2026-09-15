@@ -1,3 +1,16 @@
+> **Historical pre-implementation design note (September 2026, in Italian).**
+> This is the original product vision written *before* the code existed. It is kept to show how
+> the design evolved; the shipped architecture differs in module layout, storage and UI stack.
+> For the architecture that actually exists see [`docs/architecture.md`](../architecture.md), for
+> the scoring specification [`docs/scoring.md`](../scoring.md), and for the rules every change
+> must respect the *Core Invariants* in [`CONTRIBUTING.md`](../../CONTRIBUTING.md).
+>
+> *Nota storica pre-implementazione: la visione originale, conservata così com'era nelle sezioni
+> 1–8. Le sezioni 9–10 (struttura dei file prevista e regole per lo sviluppo) sono state superate
+> e sostituite dai documenti linkati sopra.*
+
+---
+
 # 🎯 ColdLead Studio — Master Project Vision & Architecture Specification
 
 > **Documento Direttivo per Coding Agent & Core Engineering**  
@@ -308,60 +321,16 @@ Ogni lead Tier 1 o Tier 2 riceve automaticamente un Action Kit generato dinamica
 
 ---
 
-## 9. Struttura dei File del Repository GitHub
+## 9–10. Sezioni superate
 
-```text
-ColdLeadSearch/
-├── .github/
-│   └── workflows/
-│       └── ci.yml                 # Test CI multi-OS (Ubuntu, Windows, macOS)
-├── coldlead/                      # Modulo principale installabile
-│   ├── __init__.py
-│   ├── cli.py                     # Entry point 'coldlead'
-│   ├── core/
-│   │   ├── models.py              # Dataclass & Schema JSON v1.0.0
-│   │   ├── pos_calculator.py      # Calcolo matematico puro del POS
-│   │   ├── config_manager.py      # Gestore configurazioni a cascata
-│   │   ├── weights_config.json    # Preset predefiniti
-│   │   └── red_flags.py           # Regole di esclusione immediata
-│   ├── scrapers/
-│   │   ├── places.py              # Discovery Google Places / Benchmark
-│   │   ├── tech_auditor.py        # Lighthouse & DOM Inspector
-│   │   ├── ai_enricher.py         # Analisi psicologica Gemini
-│   │   └── meta_ads.py            # Verifica campagne Ads
-│   ├── storage/
-│   │   └── session_cache.py       # Persistenza locale segnali grezzi per rescoring istantaneo
-│   ├── presentation/
-│   │   ├── terminal_ui.py         # Interfaccia grafica da terminale con Rich
-│   │   ├── formatters.py          # Serializzatori JSON, CSV (RFC 4180), Markdown
-│   │   └── pitch_generator.py     # Generatore Action Kit (Loom, Email, WhatsApp, Prompt)
-│   ├── mcp/
-│   │   └── server.py              # Server standard Model Context Protocol (stdio)
-│   └── web/
-│       ├── app.py                 # Backend FastAPI
-│       └── templates/
-│           └── index.html         # Frontend Tailwind + Sliders + Chart.js
-├── .agents/
-│   └── skills/
-│       └── coldlead-scout/
-│           └── SKILL.md           # Antigravity Skill per AGY CLI e IDE
-├── pyproject.toml                 # Packaging standard PEP 621 (pip install -e .)
-├── requirements.txt               # Dipendenze con versioni minime
-├── .gitignore                     # Protezione secrets (.env, cache, database)
-├── .env.example                   # Template variabili ambiente
-├── LICENSE                        # Licenza open-source MIT
-├── PROJECT_VISION.md              # Questo documento direttivo master
-└── README.md                      # Documentazione pubblica per GitHub con badge e guide
-```
+Le ultime due sezioni della bozza originale descrivevano una struttura di cartelle prevista
+(`coldlead/core/`, `scrapers/`, `storage/`, `presentation/`, un frontend Tailwind + Chart.js) e
+un elenco di regole per lo sviluppo. Il codice rilasciato ha preso un'altra forma, quindi quel
+testo è stato rimosso invece di lasciarlo in contraddizione con il repository:
 
----
-
-## 10. Istruzioni per il "Coding Agent Super OP"
-
-Quando un coding agent prende in carico questo repository per completare o estendere il progetto, deve attenersi alle seguenti regole tassative:
-
-1. **Non rompere il disaccoppiamento**: Il modulo `storage/session_cache.py` deve sempre memorizzare i dati grezzi estratti. La funzione `calculate_pos()` in `core/pos_calculator.py` deve essere una funzione pura e deterministica senza chiamate di rete.
-2. **Supportare la manomissione post-scraping**: Qualsiasi modifica ai pesi (via CLI, WebApp o MCP) deve operare sui dati in cache restituendo la nuova graduatoria all'istante.
-3. **Mantenere la compatibilità cross-platform**: Gestire esplicitamente la codifica UTF-8 su Windows terminal (`sys.stdout.reconfigure(encoding='utf-8')`).
-4. **Preservare la standardizzazione degli output**: Qualsiasi nuovo formato deve essere conforme ai campi definiti in `POSLeadDossier` (Schema v1.0.0).
-5. **Zero-Friction First**: Garantire che il comando `coldlead scout` funzioni anche a computer disconnesso o senza chiavi API configurate, usando i benchmark contestuali realistici.
+- **Struttura reale dei moduli** → [`docs/architecture.md`](../architecture.md)
+  (per esempio il calcolo del POS è `score_lead()` in `src/coldlead/scoring.py`, la session cache
+  è `src/coldlead/storage.py`, il server MCP è `src/coldlead/mcp_server.py`).
+- **Regole da non rompere** (funzione di scoring pura e senza rete, cache dei soli segnali grezzi,
+  compatibilità dello schema `POSLeadDossier`, rescoring senza rete, dati demo sicuri) → sezione
+  *Core Invariants* di [`CONTRIBUTING.md`](../../CONTRIBUTING.md), in inglese e con i percorsi veri.

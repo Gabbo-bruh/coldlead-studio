@@ -18,8 +18,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from coldlead.config import coldlead_home
+from coldlead.locales import locale_for_country
 
 USER_AGENT = "ColdLeadStudio/1.0 (+https://github.com/Gabbo-bruh/coldlead-studio)"
+# Never ask servers for a specific language: a multilingual site must be audited as it presents
+# itself to anyone, otherwise the M_reach variable would misjudge it as single-language.
+HTTP_HEADERS: dict[str, str] = {"User-Agent": USER_AGENT, "Accept-Language": "*"}
+DEFAULT_LANGUAGE = "en"
+
+
+def language_for_country(country: str | None) -> str:
+    """Outreach language of the locale pack serving ``country``; English when there is none."""
+    pack = locale_for_country(country)
+    return pack.language if pack else DEFAULT_LANGUAGE
 
 
 def load_dotenv(*paths: Path) -> None:
@@ -54,8 +65,8 @@ class Settings:
     llm_api_key: str | None = None
     llm_model: str | None = None
     llm_base_url: str | None = None
-    country: str = "IT"
-    language: str = "it"
+    country: str | None = None  # ISO code; None = no geographic bias
+    language: str = DEFAULT_LANGUAGE
     http_timeout: float = 10.0
     extra: dict[str, str] = field(default_factory=dict)
 
@@ -93,6 +104,12 @@ def get_settings(load_env_files: bool = True) -> Settings:
         provider = None  # unknown provider name: stay offline rather than fail later
     model = _env("COLDLEAD_LLM_MODEL") or model
 
+    # COLDLEAD_LANG wins; otherwise ("auto" or unset) the language follows COLDLEAD_COUNTRY.
+    country = (_env("COLDLEAD_COUNTRY") or "").upper() or None
+    language = (_env("COLDLEAD_LANG") or "auto").lower()
+    if language == "auto":
+        language = language_for_country(country)
+
     return Settings(
         google_places_api_key=_env("GOOGLE_PLACES_API_KEY"),
         pagespeed_api_key=_env("PAGESPEED_API_KEY"),
@@ -101,7 +118,7 @@ def get_settings(load_env_files: bool = True) -> Settings:
         llm_api_key=api_key,
         llm_model=model,
         llm_base_url=base_url,
-        country=(_env("COLDLEAD_COUNTRY") or "IT").upper(),
-        language=(_env("COLDLEAD_LANG") or "it").lower(),
+        country=country,
+        language=language,
         http_timeout=float(_env("COLDLEAD_HTTP_TIMEOUT") or 10),
     )

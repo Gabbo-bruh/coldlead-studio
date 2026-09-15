@@ -19,7 +19,7 @@ SYSTEM = (
 )
 
 
-def heuristic_enrich(lead: Lead, lang: str = "it") -> Lead:
+def heuristic_enrich(lead: Lead, lang: str = "en") -> Lead:
     signals = lead.raw_signals
     updates: dict = {}
     if signals.is_toxic_owner is None and any(
@@ -39,7 +39,7 @@ def heuristic_enrich(lead: Lead, lang: str = "it") -> Lead:
     return lead.model_copy(update={"raw_signals": new_signals, "enrichment": enrichment})
 
 
-def llm_enrich(lead: Lead, settings: Settings, lang: str = "it") -> Lead:
+def llm_enrich(lead: Lead, settings: Settings, lang: str = "en") -> Lead:
     base = heuristic_enrich(lead, lang)
     if not settings.llm_enabled:
         return base

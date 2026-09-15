@@ -522,7 +522,7 @@ function setPin(pin) {
   $("#pin-chip").hidden = !pin;
   $("#pin-btn").textContent = pin ? "📍 Move pin" : "📍 Pin on map";
   location.required = !pin;
-  location.placeholder = pin ? "optional — searching around the pin" : "Portofino";
+  location.placeholder = pin ? "optional — searching around the pin" : "Miami";
   if (pin) $("#pin-text").textContent = `📍 ${pin.lat.toFixed(4)}, ${pin.lon.toFixed(4)} · ${pin.radius} km`;
 }
 
@@ -627,7 +627,7 @@ function wire() {
     runScout(payload, $("#scout-form .btn"));
   });
   $("#demo-btn").addEventListener("click", (e) =>
-    runScout({ niche: "Charter nautico", location: "Portofino", limit: 12, source: "demo" }, e.currentTarget));
+    runScout({ niche: "Yacht charter", location: "Miami", limit: 12, source: "demo" }, e.currentTarget));
   $("#session-select").addEventListener("change", (e) => { state.sessionId = e.target.value; rescore(); });
   $("#delete-session").addEventListener("click", async () => {
     if (!state.sessionId || !confirm("Delete this cached session? Its raw signals will be lost.")) return;

@@ -55,7 +55,7 @@ VARIABLES: tuple[VariableSpec, ...] = (
         "w_I",
         "Foreign Market Friction",
         "Foreign reach",
-        "International customers (tourism hubs, luxury) served by an Italian-only site.",
+        "International customers (tourism hubs, luxury) served by a single-language site.",
     ),
     VariableSpec(
         "A_decision",
@@ -138,7 +138,7 @@ def financial_strength(lead: Lead) -> Result:
         value, reasons = 5.0, ["Legal form unknown → neutral 5.0"]
     else:
         value = knowledge.LEGAL_FORM_SCORES[form]
-        reasons = [f"Legal form {form.value} → {value}"]
+        reasons = [f"Legal form: {knowledge.LEGAL_FORM_LABELS.get(form, form.value)} → {value}"]
     employees = lead.company.employees_estimate
     if employees is not None:
         if employees >= 10:
@@ -196,8 +196,13 @@ def foreign_reach(lead: Lead) -> Result:
 
 
 def _is_mobile_number(phone: str) -> bool:
+    """Mobile by national prefix (locale packs); an empty prefix list never matches."""
     digits = "".join(c for c in phone if c.isdigit() or c == "+")
-    return digits.startswith(("+393", "393", "3")) and len(digits.lstrip("+")) >= 9
+    return (
+        bool(knowledge.MOBILE_PREFIXES)
+        and digits.startswith(knowledge.MOBILE_PREFIXES)
+        and len(digits.lstrip("+")) >= 9
+    )
 
 
 def owner_access(lead: Lead) -> Result:
@@ -212,7 +217,7 @@ def owner_access(lead: Lead) -> Result:
         return 9.0, [f"Direct line to the decision maker ({who}) → 9.0"]
     if "linkedin" in channels:
         return 8.0, ["Decision maker on LinkedIn → 8.0"]
-    if c.phone and _is_mobile_number(c.phone):
+    if c.phone and ("mobile" in channels or _is_mobile_number(c.phone)):
         return 7.5, ["Mobile phone number published → 7.5"]
     if c.phone:
         return 6.0, ["Landline only → 6.0"]

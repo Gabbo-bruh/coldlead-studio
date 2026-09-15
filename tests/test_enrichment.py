@@ -56,13 +56,17 @@ def test_enrich_leads_uses_llm_only_when_allowed(monkeypatch):
 
 
 def test_meta_ad_library():
+    markets: list[str] = []
+
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.params["ad_active_status"] == "ACTIVE"
-        assert request.url.params["ad_reached_countries"] == '["IT"]'
+        markets.append(request.url.params["ad_reached_countries"])
         return httpx.Response(200, json={"data": [{"page_name": "Portofino Charter Deluxe"}]})
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
+    assert ads.has_active_meta_ads("Portofino Charter Deluxe S.r.l.", "t", "it", client) is True
     assert ads.has_active_meta_ads("Portofino Charter Deluxe S.r.l.", "t", client=client) is True
+    assert markets == ['["IT"]', '["ALL"]']  # no configured country → every market
     empty = httpx.Client(
         transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"data": []}))
     )
@@ -76,6 +80,8 @@ def test_audit_leads_skips_demo_and_merges(monkeypatch):
 
     def fake_audit(url, client, **kwargs):
         calls.append(url)
+        # Asking for a language would make multilingual sites look single-language (M_reach).
+        assert client.headers["Accept-Language"] == "*"
         return AuditResult(
             url=url,
             signals={

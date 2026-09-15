@@ -30,7 +30,7 @@ def test_formula_matches_hand_calculation(config):
 
 
 def test_vision_example_variables(config):
-    """The dossier example from PROJECT_VISION.md: G_dig 4.7, V_ticket 9.5, M_reach 9.5 …"""
+    """The dossier example from the initial design note: G_dig 4.7, V_ticket 9.5, M_reach 9.5 …"""
     values = score_lead(make_lead(), config).variables
     assert values["G_dig"] == 4.7
     assert values["V_ticket"] == 9.5

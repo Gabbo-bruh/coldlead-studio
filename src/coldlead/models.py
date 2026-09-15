@@ -150,7 +150,7 @@ class POSEvaluation(_Model):
 
 
 class ActionKit(_Model):
-    language: str = "it"
+    language: str = "en"
     vibe_opportunity_summary: str
     loom_script_90s: str
     cold_email_subject: str

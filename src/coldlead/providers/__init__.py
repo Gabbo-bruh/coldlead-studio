@@ -22,9 +22,14 @@ class Provider(Protocol):
 
 
 class DemoProvider:
+    """Offline synthetic prospects in the locale of the searched place (or of ``country``)."""
+
     name = "demo"
+
+    def __init__(self, country: str | None = None) -> None:
+        self.country = country
 
     def search(self, niche: str, location: str, limit: int = 10, **options: object) -> list[Lead]:
         from coldlead.providers.demo import demo_leads
 
-        return demo_leads(niche, location or "Demo", limit)
+        return demo_leads(niche, location or "Demo", limit, country=self.country)

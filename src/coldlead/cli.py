@@ -25,15 +25,14 @@ from coldlead.config import (
     SEASONS,
     ConfigError,
     ScoringConfig,
-    coldlead_home,
     list_presets,
     load_user_config,
     parse_overrides,
     resolve_config,
     user_config_path,
 )
-from coldlead.export import EXTENSIONS, render
-from coldlead.models import LeadDossier, Session
+from coldlead.export import EXTENSIONS, dossier_json_schema, render
+from coldlead.models import Session
 from coldlead.outreach.action_kit import generate_action_kit
 from coldlead.providers.osm import ProviderError
 from coldlead.scoring import ScoredLead, score_leads
@@ -109,7 +108,10 @@ SessionOpt = Annotated[
 ]
 FormatOpt = Annotated[OutputFormat, typer.Option("--format", "-f", help="Output format.")]
 OutOpt = Annotated[Path | None, typer.Option("--out", "-o", help="Write output to a file.")]
-LangOpt = Annotated[str | None, typer.Option("--lang", "-l", help="Outreach language: it | en.")]
+LangOpt = Annotated[
+    str | None,
+    typer.Option("--lang", "-l", help="Outreach language: en | it (default: COLDLEAD_LANG)."),
+]
 
 
 def _die(message: str, code: int = 1) -> typer.Exit:
@@ -255,11 +257,9 @@ def _progress_callback(progress: Progress):
 
 @app.command()
 def scout(
-    niche: Annotated[
-        str, typer.Argument(help='Business niche, e.g. "Charter nautico", "dentists".')
-    ],
+    niche: Annotated[str, typer.Argument(help='Business niche, e.g. "Yacht charter", "dentists".')],
     location: Annotated[
-        str, typer.Argument(help='City or area, e.g. "Portofino". Optional with --near.')
+        str, typer.Argument(help='City or area, e.g. "Miami". Optional with --near.')
     ] = "",
     limit: Annotated[int, typer.Option("--limit", "-n", min=1, max=60, help="Max leads.")] = 10,
     near: Annotated[
@@ -568,7 +568,7 @@ def sessions(
     summaries = store.list()
     if not summaries:
         err.print(
-            'No sessions yet. Try: [bold]coldlead scout "Charter nautico" Portofino --source demo[/]'
+            'No sessions yet. Try: [bold]coldlead scout "Yacht charter" Miami --source demo[/]'
         )
         return
     console.print(terminal.sessions_table(summaries))
@@ -685,65 +685,22 @@ def mcp(
 @app.command()
 def schema(out: OutOpt = None) -> None:
     """Print the JSON Schema of the POSLeadDossier (v1.0.0) output record."""
-    data = LeadDossier.model_json_schema()
-    data = {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": f"https://coldlead.dev/schema/pos-lead-dossier/{SCHEMA_VERSION}.json",
-        **data,
-    }
-    _emit(json.dumps(data, indent=2, ensure_ascii=False), out)
+    _emit(json.dumps(dossier_json_schema(), indent=2, ensure_ascii=False), out)
 
 
 @app.command()
-def doctor() -> None:
+def doctor(
+    network: Annotated[
+        bool, typer.Option("--network", help="Also check that OpenStreetMap is reachable.")
+    ] = False,
+) -> None:
     """Check optional capabilities, API keys and paths."""
-    import importlib.util
-
-    settings = get_settings()
-
-    def row(ok: bool, label: str, detail: str) -> None:
-        console.print(
-            f"{'[green]✓[/]' if ok else '[grey50]○[/]'} {label:<28} [grey50]{escape(detail)}[/]"
-        )
+    from coldlead.doctor import run_checks
 
     console.rule(f"ColdLead Studio {__version__}")
-    row(True, "Python", sys.version.split()[0])
-    row(True, "Data directory", str(coldlead_home()))
-    row(
-        importlib.util.find_spec("fastapi") is not None,
-        "Dashboard (web extra)",
-        'pip install "coldlead-studio[web]"',
-    )
-    row(
-        importlib.util.find_spec("mcp") is not None,
-        "MCP server (mcp extra)",
-        'pip install "coldlead-studio[mcp]"',
-    )
-    row(bool(settings.google_places_api_key), "Google Places discovery", "GOOGLE_PLACES_API_KEY")
-    row(True, "OpenStreetMap discovery", "free, no key (needs network)")
-    row(
-        bool(settings.pagespeed_api_key),
-        "PageSpeed Lighthouse",
-        "PAGESPEED_API_KEY (or --pagespeed, rate-limited)",
-    )
-    row(bool(settings.meta_ads_token), "Meta Ad Library", "META_AD_LIBRARY_ACCESS_TOKEN")
-    row(
-        settings.llm_enabled,
-        "LLM insights",
-        f"{settings.llm_provider}:{settings.llm_model}"
-        if settings.llm_enabled
-        else "GEMINI / ANTHROPIC / OPENROUTER / OPENAI key, or COLDLEAD_LLM_PROVIDER=ollama",
-    )
-    row(True, "Outreach language", settings.language)
-    try:
-        resolved = resolve_config()
-        row(
-            True,
-            "Scoring config",
-            f"preset={resolved.preset} season={resolved.season} ({' → '.join(resolved.sources)})",
-        )
-    except ConfigError as exc:
-        row(False, "Scoring config", str(exc))
+    for check in run_checks(network=network):
+        mark = "[green]✓[/]" if check.ok else "[grey50]○[/]"
+        console.print(f"{mark} {check.label:<28} [grey50]{escape(check.detail)}[/]")
 
 
 def _version_callback(value: bool) -> None:

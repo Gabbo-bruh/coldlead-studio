@@ -3,6 +3,10 @@
 The same (niche, city) pair always yields the same leads, so demos, docs and tests are
 reproducible. Every lead is clearly marked ``source="demo"`` and uses reserved ``.example``
 domains: nothing here points at a real business.
+
+Names, legal forms, phone and address formats and review replies come from the locale pack of
+the searched market (:mod:`coldlead.locales`): Miami gets "Harbor Grill LLC" and +1 305-555-01xx
+numbers, Portofino gets "Trattoria da Marco S.r.l." and +39 numbers. Unknown places use en-US.
 """
 
 from __future__ import annotations
@@ -13,64 +17,15 @@ import re
 from collections.abc import Callable
 
 from coldlead import knowledge
+from coldlead.locales import Locale, detect_locale, get_locale
 from coldlead.models import Company, Lead, LegalForm, RawSignals, make_lead_id
 
-# fmt: off
-SURNAMES = (
-    "Rossi", "Bianchi", "Ferrari", "Esposito", "Romano", "Colombo", "Ricci", "Marino", "Greco",
-    "Bruno", "Gallo", "Conti", "Costa", "Giordano", "Mancini", "Lombardi", "Moretti", "Barbieri",
-    "Fontana", "Caruso", "Benvenuti", "Castaldi", "Canale", "De Luca", "Serra", "Pellegrini",
-)
-FIRST_NAMES = (
-    "Marco", "Giulia", "Luca", "Francesca", "Alessandro", "Chiara", "Matteo", "Sara", "Andrea",
-    "Elena", "Davide", "Valentina", "Stefano", "Martina", "Paolo", "Federica", "Gianni", "Laura",
-)
-PLACES = ("del Porto", "al Mare", "Riviera", "del Golfo", "Belvedere", "Centrale", "Aurora", "Stella")
-
-NAME_TEMPLATES: dict[str, tuple[str, ...]] = {
-    "nautical": ("{city} Charter", "Yacht Service {surname}", "Noleggio Barche {place}",
-                 "{surname} Boats", "Blue Horizon Charter", "Marina {place}"),
-    "real_estate": ("Immobiliare {surname}", "{city} Prestige Properties", "Casa & Mare {place}",
-                    "Agenzia Immobiliare {place}", "{surname} Real Estate"),
-    "hospitality": ("Hotel {place}", "Villa {surname}", "B&B {place}", "Residenza {surname}",
-                    "{city} Boutique Hotel", "Agriturismo {surname}"),
-    "restaurant": ("Ristorante {place}", "Trattoria da {first}", "Osteria {surname}",
-                   "Da {first} & Figli", "Pizzeria {place}", "Il Gusto di {first}"),
-    "cafe_bar": ("Bar {place}", "Caffè {surname}", "Pasticceria {surname}", "Gelateria {place}"),
-    "clinic": ("Studio Dentistico {surname}", "Clinica {place}", "Poliambulatorio {city}",
-               "Centro Medico {surname}", "Studio Medico {surname}"),
-    "beauty": ("Salone {first}", "Beauty Lab {surname}", "Centro Estetico {place}", "Barber {surname}"),
-    "professional": ("Studio Legale {surname}", "Studio {surname} & Associati",
-                     "Commercialista {first} {surname}", "Architetti {surname}"),
-    "fitness": ("Palestra {place}", "{city} Fitness Club", "Studio Pilates {first}", "CrossFit {place}"),
-    "automotive": ("Autofficina {surname}", "{city} Car Service", "Noleggio {surname}", "NCC {surname}"),
-    "retail": ("Boutique {first}", "Gioielleria {surname}", "Ottica {place}", "Negozio {surname}"),
-    "events": ("{first} Wedding Planner", "Eventi {place}", "Catering {surname}", "Foto {first} {surname}"),
-    "generic": ("{niche} {surname}", "{surname} {niche}", "{niche} {place}", "{city} {niche}"),
-}
-
-LEGAL_SUFFIX = {
-    LegalForm.SRL: " S.r.l.", LegalForm.SRLS: " S.r.l.s.", LegalForm.SNC_SAS: " S.n.c.",
-    LegalForm.SOLE_TRADER: "", LegalForm.SPA: " S.p.A.",
-}
-
-POLITE_REPLIES_IT = (
-    "Gentile {reviewer}, grazie di cuore per le belle parole! Vi aspettiamo presto a {city}.",
-    "Grazie mille {reviewer}, è stato un piacere avervi nostri ospiti. A presto!",
-    "Caro {reviewer}, felici che l'esperienza vi sia piaciuta. Un saluto da tutto lo staff.",
-)
-TOXIC_REPLIES_IT = (
-    "Sei un bugiardo, ti querelo per diffamazione e porto il tuo IP alla polizia postale!",
-    "Vergognati, questa è una recensione falsa scritta da un concorrente. Non farti più vedere.",
-)
-REVIEWERS = ("James", "Sophie", "Marco", "Anna", "Thomas", "Claire", "Giorgio", "Hannah")
 DEMO_MARK = " (demo)"
-# fmt: on
 
-Archetype = Callable[[random.Random], dict]
+Archetype = Callable[[random.Random, Locale], dict]
 
 
-def _legacy_gem(r: random.Random) -> dict:
+def _legacy_gem(r: random.Random, loc: Locale) -> dict:
     return dict(
         legal=r.choice([LegalForm.SRL, LegalForm.SRL, LegalForm.SNC_SAS]),
         website=True,
@@ -91,7 +46,7 @@ def _legacy_gem(r: random.Random) -> dict:
     )
 
 
-def _modern_leader(r: random.Random) -> dict:
+def _modern_leader(r: random.Random, loc: Locale) -> dict:
     return dict(
         legal=r.choice([LegalForm.SRL, LegalForm.SPA]),
         website=True,
@@ -112,7 +67,7 @@ def _modern_leader(r: random.Random) -> dict:
     )
 
 
-def _no_website(r: random.Random) -> dict:
+def _no_website(r: random.Random, loc: Locale) -> dict:
     return dict(
         legal=LegalForm.SOLE_TRADER,
         website=False,
@@ -125,7 +80,7 @@ def _no_website(r: random.Random) -> dict:
     )
 
 
-def _broken_mobile(r: random.Random) -> dict:
+def _broken_mobile(r: random.Random, loc: Locale) -> dict:
     return dict(
         legal=r.choice([LegalForm.SRLS, LegalForm.SNC_SAS, LegalForm.SRL]),
         website=True,
@@ -146,7 +101,7 @@ def _broken_mobile(r: random.Random) -> dict:
     )
 
 
-def _toxic_owner(r: random.Random) -> dict:
+def _toxic_owner(r: random.Random, loc: Locale) -> dict:
     return dict(
         legal=LegalForm.SOLE_TRADER,
         website=True,
@@ -168,7 +123,7 @@ def _toxic_owner(r: random.Random) -> dict:
     )
 
 
-def _agency_locked(r: random.Random) -> dict:
+def _agency_locked(r: random.Random, loc: Locale) -> dict:
     return dict(
         legal=LegalForm.SRL,
         website=True,
@@ -186,11 +141,11 @@ def _agency_locked(r: random.Random) -> dict:
         tone="Professional",
         ads=r.random() < 0.5,
         contact="linkedin",
-        agency=f"{r.choice(['Pixel', 'Digitalia', 'WebStudio', 'Creativa'])} Web Agency",
+        agency=r.choice(loc.agencies),
     )
 
 
-def _wix_midrange(r: random.Random) -> dict:
+def _wix_midrange(r: random.Random, loc: Locale) -> dict:
     return dict(
         legal=r.choice([LegalForm.SRLS, LegalForm.SRL]),
         website=True,
@@ -211,7 +166,7 @@ def _wix_midrange(r: random.Random) -> dict:
     )
 
 
-def _chain(r: random.Random) -> dict:
+def _chain(r: random.Random, loc: Locale) -> dict:
     return dict(
         legal=LegalForm.SPA,
         website=True,
@@ -233,7 +188,7 @@ def _chain(r: random.Random) -> dict:
     )
 
 
-def _insolvent(r: random.Random) -> dict:
+def _insolvent(r: random.Random, loc: Locale) -> dict:
     return dict(
         legal=LegalForm.SRL,
         website=True,
@@ -255,7 +210,7 @@ def _insolvent(r: random.Random) -> dict:
     )
 
 
-def _solid_pdf(r: random.Random) -> dict:
+def _solid_pdf(r: random.Random, loc: Locale) -> dict:
     return dict(
         legal=LegalForm.SRL,
         website=True,
@@ -303,49 +258,61 @@ def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", text.lower())[:28] or "business"
 
 
-def _phone(r: random.Random, mobile: bool) -> str:
-    """Obviously fictitious numbers (zero-filled subscriber part) so no real person is exposed."""
-    if mobile:
-        return f"+39 3{r.randint(20, 49)} 000 00{r.randint(10, 99)}"
-    return f"+39 0{r.randint(10, 99)} 000 0{r.randint(10, 99)}"
-
-
-def _name(r: random.Random, category: str, niche: str, city: str, used: set[str]) -> str:
+def _name(
+    r: random.Random, loc: Locale, category: str, niche: str, city: str, used: set[str]
+) -> str:
     """A base business name (no legal suffix) not yet in ``used``."""
-    templates = NAME_TEMPLATES.get(category, NAME_TEMPLATES["generic"])
-    niche_title = niche.strip().title() or "Servizi"
+    templates = loc.name_templates.get(category, loc.name_templates["generic"])
+    niche_title = niche.strip().title() or loc.generic_niche
     for attempt in range(50):
         name = r.choice(templates).format(
-            surname=r.choice(SURNAMES),
-            first=r.choice(FIRST_NAMES),
-            place=r.choice(PLACES),
+            surname=r.choice(loc.surnames),
+            first=r.choice(loc.first_names),
+            place=r.choice(loc.place_words),
             city=city,
             niche=niche_title,
         )
         if attempt >= 40:
-            name = f"{name} {r.choice(SURNAMES)}"
+            name = f"{name} {r.choice(loc.surnames)}"
         if name not in used:
             used.add(name)
             return name
     return f"{name} {len(used) + 1}"
 
 
-def demo_leads(niche: str, location: str, limit: int = 10) -> list[Lead]:
-    niche = niche.strip() or "Charter nautico"
-    city = location.strip().title() or "Rapallo"
+def demo_leads(
+    niche: str,
+    location: str,
+    limit: int = 10,
+    *,
+    locale: Locale | str | None = None,
+    country: str | None = None,
+) -> list[Lead]:
+    """Deterministic synthetic prospects.
+
+    ``locale`` forces a pack (a :class:`Locale` or a code such as ``"it-IT"``); by default it is
+    detected from ``location``, then ``country`` (ISO code), falling back to en-US.
+    """
+    if isinstance(locale, str):
+        loc = get_locale(locale)
+    else:
+        loc = locale or detect_locale(location, country)
+    niche = niche.strip() or loc.default_niche
+    city = location.strip().title() or loc.default_city
     category = knowledge.detect_category(niche)
     rng = random.Random(_seed(niche, city))
     leads: list[Lead] = []
     used_names: set[str] = set()
 
     for index in range(max(0, limit)):
-        profile = ARCHETYPES[index % len(ARCHETYPES)](rng)
-        legal = profile["legal"]
-        base_name = _name(rng, category, niche, city, used_names)
+        profile = ARCHETYPES[index % len(ARCHETYPES)](rng, loc)
+        archetype_form = profile["legal"]
+        suffix, legal = loc.legal_name(archetype_form)
+        base_name = _name(rng, loc, category, niche, city, used_names)
         slug = _slug(base_name)
-        name = base_name + LEGAL_SUFFIX.get(legal, "")
+        name = base_name + suffix
         if profile.get("insolvent"):
-            name = f"{name} in liquidazione"
+            name += loc.insolvency_suffix
         # Demo names can coincide with real businesses in real towns: always mark them as fictitious.
         name = f"{name}{DEMO_MARK}"
         website = f"https://www.{slug}.example" if profile["website"] else None
@@ -353,7 +320,7 @@ def demo_leads(niche: str, location: str, limit: int = 10) -> list[Lead]:
             website = website.replace("https://", "http://")
 
         contact = profile["contact"]
-        person = f"{rng.choice(FIRST_NAMES)} {rng.choice(SURNAMES)}"
+        person = f"{rng.choice(loc.first_names)} {rng.choice(loc.surnames)}"
         channels, direct = [], ""
         if contact == "owner_whatsapp":
             channels, direct = ["WhatsApp", "Phone", "Email"], person
@@ -368,11 +335,11 @@ def demo_leads(niche: str, location: str, limit: int = 10) -> list[Lead]:
         else:
             channels = ["Email", "Contact form"]
 
-        reviewer = rng.choice(REVIEWERS)
+        reviewer = rng.choice(loc.reviewers)
         if profile.get("toxic"):
-            replies = list(TOXIC_REPLIES_IT)
+            replies = list(loc.toxic_replies)
         elif profile.get("reply", 0) > 0:
-            replies = [rng.choice(POLITE_REPLIES_IT).format(reviewer=reviewer, city=city)]
+            replies = [rng.choice(loc.polite_replies).format(reviewer=reviewer, city=city)]
         else:
             replies = []
 
@@ -401,16 +368,20 @@ def demo_leads(niche: str, location: str, limit: int = 10) -> list[Lead]:
             is_chain=bool(profile.get("chain")),
             business_status="IN_LIQUIDATION" if profile.get("insolvent") else "OPERATIONAL",
         )
+        # Keyword arguments are evaluated in order: address → phone → VAT → staff keeps every
+        # pack's random sequence stable, hence its output reproducible.
         company = Company(
             name=name,
             niche=niche,
             city=city,
-            address=f"Via {rng.choice(SURNAMES)} {rng.randint(1, 120)}, {city}",
-            phone=_phone(rng, mobile=contact in ("mobile", "owner_whatsapp")),
+            address=loc.address(rng, city),
+            phone=loc.phone(rng, contact in ("mobile", "owner_whatsapp"), city),
             email=f"info@{slug}.example" if contact != "mobile" else "",
-            vat_number=f"IT000000{rng.randint(10000, 99999)}",  # invalid on purpose
+            vat_number=loc.vat_number(rng),
             legal_form=legal,
-            employees_estimate={LegalForm.SPA: 80, LegalForm.SRL: rng.randint(4, 25)}.get(legal),
+            employees_estimate={LegalForm.SPA: 80, LegalForm.SRL: rng.randint(4, 25)}.get(
+                archetype_form
+            ),
             direct_contact_person=direct,
             contact_channels=channels,
         )

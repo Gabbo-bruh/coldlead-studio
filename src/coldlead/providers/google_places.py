@@ -58,7 +58,7 @@ class GooglePlacesProvider:
     name = "google_places"
 
     def __init__(
-        self, api_key: str, client: httpx.Client | None = None, language: str = "it"
+        self, api_key: str, client: httpx.Client | None = None, language: str = "en"
     ) -> None:
         if not api_key:
             raise ProviderError("GOOGLE_PLACES_API_KEY is not set")

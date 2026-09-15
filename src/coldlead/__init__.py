@@ -3,7 +3,7 @@
 The public API is intentionally small and pure:
 
 >>> from coldlead import demo_leads, score_leads, resolve_config
->>> leads = demo_leads("Charter nautico", "Portofino", limit=5)
+>>> leads = demo_leads("Yacht charter", "Miami", limit=5)
 >>> ranked = score_leads(leads, resolve_config(preset="high_ticket_luxury"))
 >>> ranked[0].evaluation.final_score  # doctest: +SKIP
 """

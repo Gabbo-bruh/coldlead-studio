@@ -18,12 +18,12 @@ import httpx
 from coldlead import knowledge
 from coldlead.enrich.ads import has_active_meta_ads
 from coldlead.enrich.insights import heuristic_enrich, llm_enrich
-from coldlead.enrich.tech_audit import AuditResult, audit_website
+from coldlead.enrich.tech_audit import AuditResult, audit_client, audit_website
 from coldlead.models import Company, Lead, RawSignals, Session, make_lead_id
 from coldlead.providers import DemoProvider, Provider
 from coldlead.providers.google_places import GooglePlacesProvider
 from coldlead.providers.osm import LocationNotFound, OSMProvider, ProviderError
-from coldlead.settings import USER_AGENT, Settings, get_settings
+from coldlead.settings import DEFAULT_LANGUAGE, Settings, get_settings
 from coldlead.storage import SessionStore, new_session_id
 
 log = logging.getLogger(__name__)
@@ -74,7 +74,7 @@ def discover(
     if source in ("auto", "osm"):
         chain.append(("osm", lambda: OSMProvider(country=settings.country, on_step=step)))
     if source in ("auto", "demo"):
-        chain.append(("demo", DemoProvider))
+        chain.append(("demo", lambda: DemoProvider(country=settings.country)))
     if not chain:
         raise ProviderError(f"Unknown source '{source}'")
 
@@ -114,7 +114,7 @@ def discover(
         live_answered = name != "demo"
         notices.append(
             f"{name} found no '{niche}' businesses in '{location}'. Try a municipality name or a "
-            "broader niche (e.g. 'barche', 'ristorante', 'hotel')."
+            "broader niche (e.g. 'boats', 'restaurant', 'hotel')."
         )
     return [], "none", notices
 
@@ -165,10 +165,8 @@ def audit_leads(
     if not targets:
         return leads
     result = list(leads)
-    headers = {"User-Agent": USER_AGENT, "Accept-Language": "it,en;q=0.8"}
-    with httpx.Client(
-        headers=headers, timeout=settings.http_timeout, follow_redirects=True
-    ) as client:
+    # SSRF-safe transport; redirects are followed hop by hop inside audit_website.
+    with audit_client(settings.http_timeout) as client:
 
         def work(index: int) -> tuple[int, Lead]:
             lead = leads[index]
@@ -213,7 +211,7 @@ def enrich_leads(
     settings: Settings,
     *,
     ai: str = "auto",
-    lang: str = "it",
+    lang: str = DEFAULT_LANGUAGE,
     progress: Progress = _noop,
 ) -> list[Lead]:
     use_llm = settings.llm_enabled and ai in ("auto", "on")
@@ -429,11 +427,12 @@ def single_lead(
     *,
     audit: bool = True,
     settings: Settings | None = None,
-    lang: str = "it",
+    lang: str | None = None,
     **signals: object,
 ) -> Lead:
     """Build (and optionally audit) one lead from minimal facts — used by ``coldlead_score``."""
     settings = settings or get_settings()
+    lang = lang or settings.language
     known = {k: v for k, v in signals.items() if k in RawSignals.model_fields and v is not None}
     lead = Lead(
         id=make_lead_id("manual", name, city),

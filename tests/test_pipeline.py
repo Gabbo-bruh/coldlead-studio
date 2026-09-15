@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -102,6 +103,19 @@ def test_import_csv_with_italian_headers(tmp_path, store):
     assert mario.company.niche == "Ristorante"
     assert mario.raw_signals.is_running_ads is True
     assert session.leads[1].raw_signals.is_running_ads is False
+
+
+@pytest.mark.parametrize("name", ["my_leads.csv", "my_leads.it.csv"])
+def test_example_lead_lists_import_the_same_way(name):
+    path = Path(__file__).parent.parent / "examples" / name
+    leads = pipeline.read_leads_file(path)
+    assert len(leads) == 3
+    charter = leads[1]
+    assert charter.company.direct_contact_person  # "contact" / "referente"
+    assert charter.company.phone and charter.company.city
+    assert charter.raw_signals.is_running_ads is True
+    assert charter.raw_signals.owner_reply_rate == 90
+    assert leads[2].raw_signals.owner_reply_rate is None  # empty cell = unknown
 
 
 def test_import_json_dossiers_roundtrip(tmp_path, store, leads, config):

@@ -13,6 +13,10 @@ from coldlead.models import ActionKit, LeadDossier, Tier
 from coldlead.scoring import ScoredLead, tier_counts
 from coldlead.variables import VARIABLES
 
+SCHEMA_ID = (
+    "https://raw.githubusercontent.com/Gabbo-bruh/coldlead-studio/main/schema/"
+    "pos-lead-dossier.schema.json"
+)
 FORMATS: tuple[str, ...] = ("json", "jsonl", "compact", "csv", "markdown")
 EXTENSIONS = {"json": "json", "jsonl": "jsonl", "compact": "json", "csv": "csv", "markdown": "md"}
 MEDIA_TYPES = {
@@ -28,6 +32,15 @@ TIER_BADGES = {
     Tier.COLD: "🧊 Low",
     Tier.RED_FLAG: "🛑 Red flag",
 }
+
+
+def dossier_json_schema() -> dict:
+    """The published JSON Schema of :class:`LeadDossier` (``coldlead schema``)."""
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": SCHEMA_ID,  # must resolve: JSON Schema validators may dereference it
+        **LeadDossier.model_json_schema(),
+    }
 
 
 def dossiers(

@@ -49,7 +49,7 @@ def signal_icons(item: ScoredLead) -> Text:
         (_flag(s.mobile_friendly, "📱", "✗📱"), "red" if s.mobile_friendly is False else ""),
         (_flag(s.has_ssl, "🔒", "✗🔒"), "red" if s.has_ssl is False else ""),
         (
-            _flag(s.has_multilingual, "🌍", "IT-only"),
+            _flag(s.has_multilingual, "🌍", "1-lang"),
             "yellow" if s.has_multilingual is False else "",
         ),
         (

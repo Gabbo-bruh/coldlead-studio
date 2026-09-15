@@ -4,10 +4,51 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Security
+- **SSRF protection for website audits** (`coldlead audit`, `coldlead_audit`, `coldlead_score`,
+  `scout`): only `http`/`https`; hosts resolving to loopback, private, link-local (cloud metadata),
+  multicast, reserved or shared addresses are refused, also behind IPv4-mapped/6to4 IPv6; redirects
+  are followed by hand and every hop is re-checked; the address is validated again at connection
+  time (no DNS rebinding); responses are capped at 5 MB (`robots.txt` at 512 KB).
+
+### Changed
+- **English by default.** The outreach language defaults to `en` (also in the published schema,
+  `ActionKit.language`). `COLDLEAD_COUNTRY` is now unset by default (no geographic bias); when set,
+  it implies the language unless `COLDLEAD_LANG` says otherwise. **Upgrade note:** Italian users
+  get the previous behaviour back with `COLDLEAD_COUNTRY=IT`.
+- Every HTTP request sends a neutral `Accept-Language: *`, and multilingual sites are detected from
+  their declared `hreflang` alternates first. Asking servers for Italian made multilingual sites
+  look single-language and inflated `M_reach`.
+- Meta Ad Library checks search every market unless a country is configured.
+- Demo data follows the searched place: Miami (and any unknown place) gets American businesses
+  (`LLC`/`Inc.`, `+1 … 555-01xx` numbers, English review replies); Italian places are unchanged.
+- Mobile-number detection comes from the locale packs; an explicit "Mobile" channel counts too.
+- English niches score like their Italian twins: "Lawyer" = "Avvocato", "Optician" = "Ottica",
+  "Orthodontist" = "Ortodontista"… (sector keywords, ticket values and OpenStreetMap tags). A
+  generic "shop" no longer outranks the sector it names ("coffee shop" is valued as coffee).
+- Score explanations name legal forms in plain English ("sole trader"); the stored values of the
+  schema are unchanged.
+- The schema `$id` now resolves (GitHub raw URL) instead of pointing at an unregistered domain.
+- `examples/my_leads.csv` uses English columns; the Italian aliases are shown in
+  `examples/my_leads.it.csv`.
+- Documentation: `PROJECT_VISION.md` moved to
+  [`docs/design-notes/`](docs/design-notes/2026-09-initial-vision.it.md) as a historical note; new
+  [`docs/architecture.md`](docs/architecture.md); *Core Invariants* in `CONTRIBUTING.md`.
+
+### Added
+- **Locale packs** (`src/coldlead/locales/`: `en-US`, `it-IT`) isolating names, legal forms, phone
+  and address formats, review replies and local vocabulary; adding a country is one module.
+- **MCP resources** (`coldlead://sessions`, `coldlead://sessions/{session_id}`,
+  `…/leads/{lead_id}`, `coldlead://schema/pos-lead-dossier`), **MCP prompts** (`prospecting_run`,
+  `audit_and_pitch`, `refine_ranking`) and the **`coldlead_doctor`** tool; `coldlead doctor --network`.
+- `py.typed`: the package ships its type hints to library users.
+
 ## [1.0.0] — 2026-09-13
 
 First public release: a ground-up rewrite of the original prototype around the
-[project vision](PROJECT_VISION.md).
+[project vision](docs/design-notes/2026-09-initial-vision.it.md).
 
 ### Added
 - Pure, explainable **Precision Opportunity Score** engine: 8 variables with human-readable reasons,

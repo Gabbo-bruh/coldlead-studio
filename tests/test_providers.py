@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+import re
 from urllib.parse import unquote_plus
 
 import httpx
 import pytest
 
+from coldlead import knowledge
+from coldlead.locales import PACKS, detect_locale, get_locale
+from coldlead.models import LegalForm
 from coldlead.providers.demo import demo_leads
 from coldlead.providers.google_places import GooglePlacesProvider, place_to_lead
 from coldlead.providers.osm import (
@@ -53,6 +57,99 @@ def test_demo_covers_the_spectrum():
 @pytest.mark.parametrize("limit", [0, 1, 7, 60])
 def test_demo_limit(limit):
     assert len(demo_leads("Palestra", "Torino", limit)) == limit
+
+
+# ---------------------------------------------------------------------------- locale packs
+
+
+@pytest.mark.parametrize(
+    ("location", "country", "code"),
+    [
+        ("Miami", None, "en-US"),
+        ("Portofino", None, "it-IT"),
+        ("cefalu", None, "it-IT"),  # accents are optional
+        ("Santa Margherita Ligure, Italy", None, "it-IT"),
+        ("Naples", None, "it-IT"),
+        ("Naples, Florida", None, "en-US"),  # the rightmost, most specific place wins
+        ("Florence, Italy", None, "it-IT"),
+        ("Miami", "IT", "en-US"),  # a named place beats the configured country…
+        ("Springfield", "IT", "it-IT"),  # …which beats the default
+        ("Springfield", None, "en-US"),  # unknown places fall back to en-US
+        ("", None, "en-US"),
+    ],
+)
+def test_locale_detection(location, country, code):
+    assert detect_locale(location, country).code == code
+
+
+def test_get_locale_aliases():
+    assert get_locale("it_IT") is get_locale("it") is get_locale("IT") is get_locale("it-IT")
+    assert get_locale("en-us").code == "en-US"
+    with pytest.raises(KeyError, match="Available"):
+        get_locale("xx-XX")
+
+
+def test_quickstart_miami_is_american_and_fictitious():
+    """`coldlead scout "Yacht charter" "Miami" --source demo` — the README's first command."""
+    leads = demo_leads("Yacht charter", "Miami", 12)
+    for lead in leads:
+        c = lead.company
+        assert c.name.endswith("(demo)")
+        assert not any(s in c.name for s in ("S.r.l", "S.p.A", "S.n.c", "liquidazione"))
+        assert re.fullmatch(r"\+1 305-555-01\d\d", c.phone)  # Miami area code, fiction-only block
+        assert c.vat_number == "" and not c.address.startswith("Via ")
+        assert c.legal_form in (LegalForm.LTD, LegalForm.SNC_SAS, LegalForm.SOLE_TRADER)
+    assert any(" LLC (demo)" in ld.company.name for ld in leads)
+    assert any(" Inc. (demo)" in ld.company.name for ld in leads)
+    insolvent = next(ld for ld in leads if ld.raw_signals.business_status == "IN_LIQUIDATION")
+    assert "(in liquidation)" in insolvent.company.name
+    replies = [r for ld in leads for r in ld.raw_signals.sample_owner_replies]
+    assert replies and not any("grazie" in r.lower() or "querelo" in r for r in replies)
+    again = demo_leads("Yacht charter", "Miami", 12)
+    assert [ld.model_dump(exclude={"collected_at"}) for ld in again] == [
+        ld.model_dump(exclude={"collected_at"}) for ld in leads
+    ]
+    assert [ld.id for ld in demo_leads("yacht charter", "miami", 12)] == [ld.id for ld in leads]
+
+
+def test_italian_places_keep_italian_demo_data():
+    lead = demo_leads("Charter nautico", "Portofino", 1)[0]
+    assert lead.company.phone.startswith("+39 ")
+    assert lead.company.legal_form in (LegalForm.SRL, LegalForm.SNC_SAS)
+    assert lead.company.vat_number.startswith("IT")
+    forced = demo_leads("Charter nautico", "Springfield", 1, locale="it-IT")[0]
+    assert forced.company.phone.startswith("+39 ")
+    assert demo_leads("Hotel", "Springfield", 1, country="IT")[0].company.phone.startswith("+39")
+
+
+@pytest.mark.parametrize("pack", PACKS, ids=lambda p: p.code)
+def test_locale_packs_are_complete_and_consistent(pack):
+    """The checklist a contributor's new pack must pass."""
+    assert pack.default_city and pack.default_niche and pack.countries and pack.language
+    assert set(pack.name_templates) >= {*knowledge.NICHE_CATEGORIES, "generic"}
+    for templates in pack.name_templates.values():
+        for template in templates:  # only the documented placeholders
+            template.format(surname="S", first="F", place="P", city="C", niche="N")
+    for form, (suffix, recorded) in pack.legal_forms.items():
+        if suffix:  # the suffix must read back as the legal form the dossier records
+            assert knowledge.parse_legal_form(f"Acme{suffix}") is recorded, (form, suffix)
+    for reply in pack.toxic_replies:  # the red-flag vocabulary must recognise the pack's own abuse
+        assert any(re.search(p, reply, re.I) for p in knowledge.TOXIC_REPLY_PATTERNS), reply
+    for reply in pack.polite_replies:
+        assert not any(re.search(p, reply, re.I) for p in knowledge.TOXIC_REPLY_PATTERNS), reply
+    leads = demo_leads(pack.default_niche, pack.default_city, 12, locale=pack)
+    assert len({ld.company.name for ld in leads}) == 12
+    assert all(".example" in (ld.raw_signals.website_url or ".example") for ld in leads)
+
+
+def test_configured_country_drives_demo_fallback(store):
+    from coldlead import pipeline
+    from coldlead.settings import Settings
+
+    session = pipeline.scout(
+        "Hotel", "Springfield", 2, source="demo", store=store, settings=Settings(country="IT")
+    )
+    assert session.leads[0].company.phone.startswith("+39")
 
 
 def test_osm_tag_filters():
