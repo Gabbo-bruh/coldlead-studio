@@ -10,7 +10,7 @@ The public API is intentionally small and pure:
 
 from __future__ import annotations
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 SCHEMA_VERSION = "1.0.0"
 
 from coldlead.config import ScoringConfig, list_presets, resolve_config  # noqa: E402

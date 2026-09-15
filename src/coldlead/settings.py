@@ -17,10 +17,11 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from coldlead import __version__
 from coldlead.config import coldlead_home
 from coldlead.locales import locale_for_country
 
-USER_AGENT = "ColdLeadStudio/1.0 (+https://github.com/Gabbo-bruh/coldlead-studio)"
+USER_AGENT = f"ColdLeadStudio/{__version__} (+https://github.com/Gabbo-bruh/coldlead-studio)"
 # Never ask servers for a specific language: a multilingual site must be audited as it presents
 # itself to anyone, otherwise the M_reach variable would misjudge it as single-language.
 HTTP_HEADERS: dict[str, str] = {"User-Agent": USER_AGENT, "Accept-Language": "*"}
